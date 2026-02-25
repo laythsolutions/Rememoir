@@ -7,8 +7,8 @@ import { PenLine, ScrollText, BarChart2, BookMarked, Settings } from "lucide-rea
 const NAV_ITEMS = [
   { href: "/entry",         icon: PenLine,     label: "Write"    },
   { href: "/timeline",      icon: ScrollText,  label: "Journal"  },
-  { href: "/insights",      icon: BarChart2,   label: "Insights" },
   { href: "/autobiography", icon: BookMarked,  label: "Story"    },
+  { href: "/insights",      icon: BarChart2,   label: "Insights" },
   { href: "/settings",      icon: Settings,    label: "Settings" },
 ] as const;
 

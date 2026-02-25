@@ -263,10 +263,10 @@ function ReturningUserHome({
               Journal
             </div>
           </Link>
-          <Link href="/insights" className="group block">
+          <Link href="/autobiography" className="group block">
             <div className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border bg-card shadow-sm font-medium text-sm text-foreground/80 group-hover:border-primary/30 group-hover:text-primary group-hover:shadow-md transition-all duration-200 cursor-pointer">
-              <BarChart2 className="w-4 h-4" />
-              Insights
+              <BookMarked className="w-4 h-4" />
+              My Story
             </div>
           </Link>
         </div>
