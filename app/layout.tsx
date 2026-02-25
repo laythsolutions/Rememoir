@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Lora } from "next/font/google";
 import "./globals.css";
 import { BottomNav } from "@/components/BottomNav";
 
@@ -9,8 +9,16 @@ const inter = Inter({
   display: "swap",
 });
 
+const lora = Lora({
+  subsets: ["latin"],
+  variable: "--font-lora",
+  display: "swap",
+  style: ["normal", "italic"],
+  weight: ["400", "500", "600", "700"],
+});
+
 export const viewport: Viewport = {
-  themeColor: "#6366f1",
+  themeColor: "#8a6028",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -60,11 +68,11 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="msapplication-TileColor" content="#6366f1" />
+        <meta name="msapplication-TileColor" content="#8a6028" />
         {/* Inline script prevents flash of wrong theme before React hydrates */}
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('rememoir_theme');if(t==='dark'||(t==null&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();` }} />
       </head>
-      <body className={`${inter.variable} font-[family-name:var(--font-inter)] antialiased min-h-screen bg-background text-foreground pb-[calc(4rem+env(safe-area-inset-bottom))]`}>
+      <body className={`${inter.variable} ${lora.variable} font-[family-name:var(--font-inter)] antialiased min-h-screen bg-background text-foreground pb-[calc(4rem+env(safe-area-inset-bottom))]`}>
         {children}
         <BottomNav />
       </body>

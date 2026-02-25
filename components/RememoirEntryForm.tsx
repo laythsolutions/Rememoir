@@ -143,11 +143,14 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
           onChange={(e) => setText(e.target.value)}
           placeholder="What's on your mind today…"
           autoFocus
-          className="writing-area w-full min-h-[200px] px-4 py-3.5 rounded-2xl border border-border bg-card text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/40 resize-none transition-all duration-200 shadow-sm"
+          className="writing-area w-full min-h-[calc(100svh-380px)] px-5 py-4 rounded-2xl border border-border bg-card text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/40 resize-none transition-all duration-200 shadow-sm"
         />
         <div className="flex justify-end px-1">
           <span className="text-[11px] text-muted-foreground/60 tabular-nums">
-            {wordCount > 0 ? `${wordCount} word${wordCount !== 1 ? "s" : ""}` : ""}
+            {wordCount === 0 ? "" :
+             wordCount >= 300 ? `${wordCount} words · great entry` :
+             wordCount >= 100 ? `${wordCount} words · keep going` :
+             `${wordCount} word${wordCount !== 1 ? "s" : ""}`}
           </span>
         </div>
       </div>

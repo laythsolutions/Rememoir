@@ -8,13 +8,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/TagInput";
 import { deleteEntry, updateEntry } from "@/lib/db";
 import { getMediaBlobUrl } from "@/lib/opfs";
-import { formatDate, formatTime } from "@/lib/utils";
+import { formatDayOfWeek, formatDateLong, formatTime } from "@/lib/utils";
 import { useEntryStore } from "@/store/entryStore";
 import type { RememoirEntry } from "@/lib/types";
 
 interface RememoirTimelineEntryProps {
   entry: RememoirEntry;
   highlightQuery?: string;
+  index?: number;
 }
 
 function highlightText(text: string, query: string): React.ReactNode {
@@ -30,11 +31,12 @@ function highlightText(text: string, query: string): React.ReactNode {
   );
 }
 
-export function RememoirTimelineEntry({ entry, highlightQuery }: RememoirTimelineEntryProps) {
+export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: RememoirTimelineEntryProps) {
   const [expanded, setExpanded] = useState(false);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
   const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(entry.text);
@@ -62,8 +64,9 @@ export function RememoirTimelineEntry({ entry, highlightQuery }: RememoirTimelin
   }, [audioBlobUrl, videoBlobUrl]);
 
   const handleDelete = async () => {
-    if (!entry.id || !confirm("Delete this entry? This cannot be undone.")) return;
+    if (!entry.id) return;
     setIsDeleting(true);
+    setDeleteConfirm(false);
     try {
       await deleteEntry(entry.id);
       removeEntry(entry.id);
@@ -98,11 +101,13 @@ export function RememoirTimelineEntry({ entry, highlightQuery }: RememoirTimelin
     ? entry.text.slice(0, 220).trim() + "…"
     : entry.text;
 
+  const staggerDelay = Math.min(index * 40, 200);
+
   // ── Edit mode ────────────────────────────────────────────────────────────────
 
   if (isEditing) {
     return (
-      <div className="rounded-2xl border border-primary/30 bg-card shadow-sm p-4 flex flex-col gap-3">
+      <div className="rounded-2xl border border-primary/30 border-l-[3px] border-l-primary/60 bg-card shadow-sm p-4 flex flex-col gap-3">
         <Textarea
           value={editText}
           onChange={(e) => setEditText(e.target.value)}
@@ -127,13 +132,23 @@ export function RememoirTimelineEntry({ entry, highlightQuery }: RememoirTimelin
   // ── Display mode ─────────────────────────────────────────────────────────────
 
   return (
-    <div className={`rounded-2xl border border-border bg-card shadow-sm transition-all duration-200 overflow-hidden ${isDeleting ? "opacity-40 pointer-events-none scale-[0.98]" : ""}`}>
+    <div
+      className={`animate-page-in rounded-2xl border border-border border-l-[3px] border-l-primary/25 bg-card shadow-sm transition-all duration-200 overflow-hidden ${isDeleting ? "opacity-40 pointer-events-none scale-[0.98]" : ""}`}
+      style={{ animationDelay: `${staggerDelay}ms` }}
+    >
       <div className="p-4 flex flex-col gap-3">
         {/* Header */}
         <div className="flex items-start justify-between gap-2">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[13px] font-semibold leading-tight">{formatDate(entry.createdAt)}</span>
-            <span className="text-[11px] text-muted-foreground">{formatTime(entry.createdAt)}</span>
+          <div className="flex flex-col gap-0">
+            <span className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest leading-none mb-0.5">
+              {formatDayOfWeek(entry.createdAt)}
+            </span>
+            <span className="font-serif text-[15px] font-semibold text-foreground leading-snug">
+              {formatDateLong(entry.createdAt)}
+            </span>
+            <span className="text-[11px] text-muted-foreground/60 mt-0.5">
+              {formatTime(entry.createdAt)}
+            </span>
           </div>
 
           <div className="flex items-center gap-0.5 -mr-1 shrink-0">
@@ -156,14 +171,34 @@ export function RememoirTimelineEntry({ entry, highlightQuery }: RememoirTimelin
             >
               <Pencil className="w-3.5 h-3.5" />
             </button>
-            <button
-              onClick={handleDelete}
-              aria-label="Delete entry"
-              disabled={isDeleting}
-              className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-destructive hover:bg-destructive/8 transition-all duration-150 cursor-pointer disabled:pointer-events-none"
-            >
-              {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-            </button>
+
+            {/* Inline two-step delete confirm */}
+            {deleteConfirm ? (
+              <div className="flex items-center gap-1.5 ml-1">
+                <span className="text-[11px] text-muted-foreground">Delete?</span>
+                <button
+                  onClick={handleDelete}
+                  className="text-[11px] font-semibold text-destructive hover:underline transition-colors cursor-pointer"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setDeleteConfirm(false)}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  No
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setDeleteConfirm(true)}
+                aria-label="Delete entry"
+                disabled={isDeleting}
+                className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-destructive hover:bg-destructive/8 transition-all duration-150 cursor-pointer disabled:pointer-events-none"
+              >
+                {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              </button>
+            )}
           </div>
         </div>
 

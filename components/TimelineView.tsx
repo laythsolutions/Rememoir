@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, Search, X, Loader2, List, CalendarDays, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,19 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useEntries } from "@/hooks/useEntries";
 import { useSearch } from "@/hooks/useSearch";
 import { getAllTags } from "@/lib/db";
+import { monthKey, formatMonthYear } from "@/lib/utils";
+import type { RememoirEntry } from "@/lib/types";
+
+function MonthDivider({ iso }: { iso: string }) {
+  return (
+    <div className="flex items-center gap-3 py-1 sticky top-[57px] z-[9] bg-background/90 backdrop-blur-sm">
+      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest shrink-0">
+        {formatMonthYear(iso + "-01")}
+      </span>
+      <div className="flex-1 h-px bg-border/60" />
+    </div>
+  );
+}
 
 export function TimelineView() {
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
@@ -68,6 +81,22 @@ export function TimelineView() {
   const displayEntries = query ? filteredResults : entries;
   const isFiltered = tagFilter !== undefined || from !== undefined || to !== undefined;
   const hasDateFilter = from !== undefined || to !== undefined;
+
+  // Group display entries by month
+  const groupedEntries = useMemo(() => {
+    const groups: { month: string; entries: RememoirEntry[] }[] = [];
+    let currentMonth = "";
+    for (const entry of displayEntries) {
+      const m = monthKey(entry.createdAt);
+      if (m !== currentMonth) {
+        currentMonth = m;
+        groups.push({ month: m, entries: [entry] });
+      } else {
+        groups[groups.length - 1].entries.push(entry);
+      }
+    }
+    return groups;
+  }, [displayEntries]);
 
   return (
     <main className="min-h-screen bg-background">
@@ -213,7 +242,7 @@ export function TimelineView() {
               {query && !isSearching && (
                 <p className="text-[13px] text-muted-foreground">
                   {filteredResults.length === 0
-                    ? "No entries found"
+                    ? "Nothing found — try different words."
                     : `${filteredResults.length} entr${filteredResults.length === 1 ? "y" : "ies"} found`}
                 </p>
               )}
@@ -222,10 +251,11 @@ export function TimelineView() {
               {isLoading && entries.length === 0 && (
                 <div className="flex flex-col gap-3">
                   {[...Array(4)].map((_, i) => (
-                    <div key={i} className="rounded-2xl border border-border bg-card shadow-sm p-4 flex flex-col gap-3 animate-pulse">
+                    <div key={i} className="rounded-2xl border border-border border-l-[3px] border-l-primary/20 bg-card shadow-sm p-4 flex flex-col gap-3 animate-pulse">
                       <div className="flex items-start justify-between">
                         <div className="flex flex-col gap-1.5">
-                          <div className="h-3.5 w-24 bg-muted rounded-full" />
+                          <div className="h-2.5 w-16 bg-muted rounded-full" />
+                          <div className="h-4 w-36 bg-muted rounded-full" />
                           <div className="h-2.5 w-14 bg-muted/60 rounded-full" />
                         </div>
                         <div className="flex gap-1">
@@ -247,16 +277,16 @@ export function TimelineView() {
               {!isLoading && displayEntries.length === 0 && !query && (
                 <div className="flex flex-col items-center gap-4 py-20 text-center">
                   <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
-                    <List className="w-7 h-7 text-muted-foreground/40" />
+                    <span className="text-3xl text-muted-foreground/30 font-serif select-none">✦</span>
                   </div>
                   <div>
                     <p className="text-base font-semibold">
-                      {isFiltered ? "No entries match these filters" : "Your journal is empty"}
+                      {isFiltered ? "No entries match these filters" : "Every story starts here."}
                     </p>
                     <p className="text-sm text-muted-foreground mt-1">
                       {isFiltered
                         ? "Try different filters, or clear them."
-                        : "Start capturing your thoughts."}
+                        : "Write your first entry and begin the record."}
                     </p>
                   </div>
                   {isFiltered ? (
@@ -276,22 +306,35 @@ export function TimelineView() {
                 </div>
               )}
 
-              {/* Entries */}
-              <div className="flex flex-col gap-3">
-                {displayEntries.map((entry) => (
-                  <RememoirTimelineEntry
-                    key={entry.id}
-                    entry={entry}
-                    highlightQuery={query || undefined}
-                  />
-                ))}
-              </div>
+              {/* Entries grouped by month */}
+              {groupedEntries.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {groupedEntries.map(({ month, entries: monthEntries }, groupIdx) => {
+                    const startIndex = groupedEntries
+                      .slice(0, groupIdx)
+                      .reduce((acc, g) => acc + g.entries.length, 0);
+                    return (
+                      <div key={month} className="flex flex-col gap-3">
+                        <MonthDivider iso={month} />
+                        {monthEntries.map((entry, i) => (
+                          <RememoirTimelineEntry
+                            key={entry.id}
+                            entry={entry}
+                            highlightQuery={query || undefined}
+                            index={startIndex + i}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Infinite scroll sentinel */}
               <div ref={loaderRef} className="py-4 flex justify-center">
                 {isLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
                 {!isLoading && !hasMore && entries.length > 0 && !query && (
-                  <p className="text-xs text-muted-foreground/60">All entries loaded</p>
+                  <p className="text-[12px] text-muted-foreground/50 font-serif italic">— You&apos;ve reached the beginning —</p>
                 )}
               </div>
             </div>

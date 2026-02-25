@@ -30,3 +30,30 @@ export function formatTime(iso: string): string {
     minute: "2-digit",
   });
 }
+
+/** e.g. "Thursday" */
+export function formatDayOfWeek(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { weekday: "long" });
+}
+
+/** e.g. "January 15, 2026" */
+export function formatDateLong(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** e.g. "January 2026" */
+export function formatMonthYear(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/** e.g. "2026-01" — used for grouping */
+export function monthKey(iso: string): string {
+  return iso.slice(0, 7);
+}

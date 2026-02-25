@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   BookOpen, Shield, Wifi, Download,
   PenLine, ScrollText, BarChart2, BookMarked, ChevronRight,
-  Flame, CalendarCheck, NotebookPen, X,
+  Flame, CalendarCheck, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -137,8 +137,8 @@ function ReturningUserHome({
       {/* Nav */}
       <nav className="flex items-center justify-between px-4 py-3.5 border-b border-border/60 bg-background/80 backdrop-blur-xl sticky top-0 z-30">
         <div className="flex items-center gap-2">
-          <NotebookPen className="w-5 h-5 text-primary" strokeWidth={1.75} />
-          <span className="font-bold text-base tracking-tight">Rememoir</span>
+          <span className="text-primary text-[18px] leading-none font-serif select-none" aria-hidden>✦</span>
+          <span className="font-serif font-semibold text-base tracking-tight">Rememoir</span>
         </div>
         <ThemeToggle />
       </nav>
@@ -147,7 +147,7 @@ function ReturningUserHome({
         {/* Greeting */}
         <div className="flex flex-col gap-0.5">
           <p className="text-sm text-muted-foreground font-medium">{todayLabel}</p>
-          <h1 className="text-[28px] font-bold tracking-tight leading-tight">{greeting}</h1>
+          <h1 className="font-serif text-[28px] font-semibold tracking-tight leading-tight">{greeting}</h1>
         </div>
 
         {/* Streak-at-risk nudge */}
@@ -361,8 +361,8 @@ function LandingPage() {
         {/* Nav */}
         <nav className="flex items-center justify-between px-4 py-3.5 border-b border-border/60 bg-background/80 backdrop-blur-xl">
           <div className="flex items-center gap-2">
-            <NotebookPen className="w-5 h-5 text-primary" strokeWidth={1.75} />
-            <span className="font-bold text-base tracking-tight">Rememoir</span>
+            <span className="text-primary text-[18px] leading-none font-serif select-none" aria-hidden>✦</span>
+            <span className="font-serif font-semibold text-base tracking-tight">Rememoir</span>
           </div>
           <ThemeToggle />
         </nav>
@@ -374,8 +374,8 @@ function LandingPage() {
               <Shield className="w-3.5 h-3.5" />
               100% private · offline-first · open source
             </div>
-            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.1] mb-5">
-              <span className="bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 bg-clip-text text-transparent">
+            <h1 className="text-4xl sm:text-5xl tracking-tight leading-[1.15] mb-5">
+              <span className="font-serif italic font-normal text-foreground/65">
                 My memories,
                 <br />
                 my thoughts,
@@ -383,7 +383,7 @@ function LandingPage() {
                 my reflections,
               </span>
               <br />
-              <span className="text-foreground">Me.</span>
+              <span className="font-serif font-bold not-italic text-foreground">Me.</span>
             </h1>
             <p className="text-muted-foreground text-[17px] leading-relaxed mb-10">
               A private journal that lives on your device.
