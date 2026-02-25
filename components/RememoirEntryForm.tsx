@@ -13,6 +13,7 @@ import type { RememoirEntry, ImageRef } from "@/lib/types";
 import { useRecording } from "@/hooks/useRecording";
 import { formatDuration } from "@/lib/utils";
 import { saveMediaFile } from "@/lib/opfs";
+import { compressImage } from "@/lib/imageUtils";
 
 // ─── Transcript card ─────────────────────────────────────────────────────────
 
@@ -133,11 +134,20 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
 
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
 
-  const handleImageFiles = useCallback((files: FileList | null) => {
+  // Auto-grow textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.max(el.scrollHeight, 160)}px`;
+  }, [text]);
+
+  const handleImageFiles = useCallback(async (files: FileList | null) => {
     if (!files) return;
-    const newFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    const newUrls = newFiles.map((f) => URL.createObjectURL(f));
-    setImageFiles((prev) => [...prev, ...newFiles]);
+    const rawFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    const compressed = await Promise.all(rawFiles.map((f) => compressImage(f)));
+    const newUrls = compressed.map((f) => URL.createObjectURL(f));
+    setImageFiles((prev) => [...prev, ...compressed]);
     setImagePreviewUrls((prev) => [...prev, ...newUrls]);
   }, []);
 
@@ -249,7 +259,7 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
           }}
           placeholder="What's on your mind today…"
           autoFocus
-          className="writing-area w-full min-h-[calc(100svh-380px)] px-5 py-4 rounded-2xl border border-border bg-card text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/40 resize-none transition-all duration-200 shadow-sm"
+          className="writing-area w-full min-h-[160px] px-5 py-4 rounded-2xl border border-border bg-card text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/40 resize-none transition-all duration-200 shadow-sm overflow-hidden"
         />
         <div className="flex items-center justify-between px-1">
           <span className="text-[11px] text-muted-foreground/40">

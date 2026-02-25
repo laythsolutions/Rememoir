@@ -104,6 +104,7 @@ function ReturningUserHome({
   const [showBackupNudge, setShowBackupNudge] = useState(false);
   const [installEvent, setInstallEvent] = useState<Event & { prompt(): Promise<void> } | null>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [showIOSBanner, setShowIOSBanner] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -115,12 +116,22 @@ function ReturningUserHome({
     if (!lastExportDate) setShowBackupNudge(true);
 
     const dismissed = localStorage.getItem("rememoir_pwa_dismissed");
+    if (dismissed) return;
+
+    // iOS Safari: no beforeinstallprompt — show manual instructions
+    const ua = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua) && !(ua.includes("CriOS") || ua.includes("FxiOS"));
+    const isStandalone = ("standalone" in navigator) && (navigator as { standalone?: boolean }).standalone;
+    if (isIOS && !isStandalone) {
+      setShowIOSBanner(true);
+      return;
+    }
+
+    // Android / Chrome: native install prompt
     const handler = (e: Event) => {
       e.preventDefault();
-      if (!dismissed) {
-        setInstallEvent(e as Event & { prompt(): Promise<void> });
-        setShowInstallBanner(true);
-      }
+      setInstallEvent(e as Event & { prompt(): Promise<void> });
+      setShowInstallBanner(true);
     };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
@@ -135,6 +146,7 @@ function ReturningUserHome({
   const dismissInstall = () => {
     localStorage.setItem("rememoir_pwa_dismissed", "1");
     setShowInstallBanner(false);
+    setShowIOSBanner(false);
   };
 
   const handlePromptWrite = () => {
@@ -200,7 +212,7 @@ function ReturningUserHome({
           </Link>
         )}
 
-        {/* PWA install banner */}
+        {/* PWA install banner — Android/Chrome */}
         {showInstallBanner && (
           <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-card border border-border shadow-sm">
             <Download className="w-4 h-4 text-primary shrink-0" />
@@ -214,14 +226,28 @@ function ReturningUserHome({
               >
                 Install
               </button>
-              <button
-                onClick={dismissInstall}
-                aria-label="Dismiss"
-                className="text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
-              >
+              <button onClick={dismissInstall} aria-label="Dismiss" className="text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
+          </div>
+        )}
+
+        {/* PWA install banner — iOS Safari */}
+        {showIOSBanner && (
+          <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-card border border-border shadow-sm">
+            <Download className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] text-foreground/80 leading-snug font-medium">Add to Home Screen</p>
+              <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
+                Tap the <span className="font-semibold">Share</span> button{" "}
+                <span aria-hidden className="text-[15px] align-middle">⬆</span>{" "}
+                then <span className="font-semibold">&ldquo;Add to Home Screen&rdquo;</span>
+              </p>
+            </div>
+            <button onClick={dismissInstall} aria-label="Dismiss" className="text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer shrink-0 mt-0.5">
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 

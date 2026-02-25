@@ -8,9 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/TagInput";
 import { deleteEntry, updateEntry } from "@/lib/db";
 import { getMediaBlobUrl, saveMediaFile, deleteMediaFile } from "@/lib/opfs";
+import { compressImage } from "@/lib/imageUtils";
 import { formatDayOfWeek, formatDateLong, formatTime } from "@/lib/utils";
 import { useEntryStore } from "@/store/entryStore";
 import type { RememoirEntry, ImageRef } from "@/lib/types";
+import { MarkdownText } from "@/components/MarkdownText";
 
 interface RememoirTimelineEntryProps {
   entry: RememoirEntry;
@@ -98,11 +100,12 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
     setIsEditing(true);
   }, [entry.images, imageBlobUrls]);
 
-  const handleEditAddImages = useCallback((files: FileList | null) => {
+  const handleEditAddImages = useCallback(async (files: FileList | null) => {
     if (!files) return;
-    const newFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    const newUrls = newFiles.map((f) => URL.createObjectURL(f));
-    setNewImageFiles((prev) => [...prev, ...newFiles]);
+    const rawFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    const compressed = await Promise.all(rawFiles.map((f) => compressImage(f)));
+    const newUrls = compressed.map((f) => URL.createObjectURL(f));
+    setNewImageFiles((prev) => [...prev, ...compressed]);
     setNewImagePreviewUrls((prev) => [...prev, ...newUrls]);
   }, []);
 
@@ -342,7 +345,9 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
         {/* Text */}
         {entry.text && (
           <p className="text-[14px] leading-[1.7] text-foreground/85 whitespace-pre-wrap">
-            {highlightQuery ? highlightText(previewText, highlightQuery) : previewText}
+            {highlightQuery
+              ? highlightText(previewText, highlightQuery)
+              : <MarkdownText text={previewText} />}
           </p>
         )}
 

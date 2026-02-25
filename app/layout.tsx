@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Lora } from "next/font/google";
 import "./globals.css";
 import { BottomNav } from "@/components/BottomNav";
+import { PinGate } from "@/components/PinLock";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -81,10 +82,12 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        <div id="main-content">
-          {children}
-        </div>
-        <BottomNav />
+        <PinGate>
+          <div id="main-content">
+            {children}
+          </div>
+          <BottomNav />
+        </PinGate>
       </body>
     </html>
   );

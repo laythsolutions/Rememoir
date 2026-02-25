@@ -184,6 +184,14 @@
   animation: page-in 0.22s cubic-bezier(0, 0, 0.2, 1) both;
 }
 
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-8px); }
+  40%       { transform: translateX(8px); }
+  60%       { transform: translateX(-6px); }
+  80%       { transform: translateX(6px); }
+}
+
 /* ── Respect reduced-motion (HIGH severity per WCAG) ──────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,
