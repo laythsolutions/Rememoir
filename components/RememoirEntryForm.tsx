@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Mic, Video, Square, Trash2, FileText, CornerUpLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,13 @@ function TranscriptCard({
 
 // ─── Main form ────────────────────────────────────────────────────────────────
 
+const DRAFT_KEY = "rememoir_entry_draft";
+
+interface DraftData {
+  text: string;
+  tags: string[];
+}
+
 export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string }) {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -56,8 +63,50 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPrompt, setShowPrompt] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { addEntryToFeed } = useEntryStore();
+
+  // Restore draft on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const saved: DraftData = JSON.parse(raw);
+        if (saved.text?.trim()) {
+          setText(saved.text);
+          setTags(saved.tags ?? []);
+          setDraftRestored(true);
+          setTimeout(() => setDraftRestored(false), 3000);
+        }
+      }
+    } catch {
+      // ignore corrupt draft
+    }
+  }, []);
+
+  // Auto-save draft on text/tag changes
+  const saveDraft = useCallback((t: string, tg: string[]) => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      if (t.trim()) {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ text: t, tags: tg }));
+      } else {
+        localStorage.removeItem(DRAFT_KEY);
+      }
+    }, 800);
+  }, []);
+
+  const handleTextChange = useCallback((val: string) => {
+    setText(val);
+    saveDraft(val, tags);
+  }, [tags, saveDraft]);
+
+  const handleTagsChange = useCallback((tg: string[]) => {
+    setTags(tg);
+    saveDraft(text, tg);
+  }, [text, saveDraft]);
 
   // Use initialPrompt from URL if provided, otherwise fall back to daily prompt
   const dailyPrompt = getDailyPrompt();
@@ -115,6 +164,7 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
 
       const id = await addEntry(entryData);
       addEntryToFeed({ ...entryData, id });
+      localStorage.removeItem(DRAFT_KEY);
       router.push("/timeline");
     } catch (err) {
       setError("Failed to save entry. Please try again.");
@@ -126,11 +176,18 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Draft restored banner */}
+      {draftRestored && (
+        <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-primary/8 border border-primary/20 text-[13px] text-primary font-medium">
+          <span aria-hidden>✦</span> Draft restored — pick up where you left off.
+        </div>
+      )}
+
       {/* Daily prompt */}
       {showPrompt && (
         <RememoirPromptDisplay
           prompt={prompt}
-          onUse={(t) => setText((prev) => prev ? prev + "\n\n" + t : t)}
+          onUse={(t) => { const val = text ? text + "\n\n" + t : t; setText(val); saveDraft(val, tags); }}
           onDismiss={() => setShowPrompt(false)}
         />
       )}
@@ -140,12 +197,21 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => handleTextChange(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              handleSubmit();
+            }
+          }}
           placeholder="What's on your mind today…"
           autoFocus
           className="writing-area w-full min-h-[calc(100svh-380px)] px-5 py-4 rounded-2xl border border-border bg-card text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/40 resize-none transition-all duration-200 shadow-sm"
         />
-        <div className="flex justify-end px-1">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-[11px] text-muted-foreground/40">
+            {!isSubmitting && "⌘↵ to save"}
+          </span>
           <span className="text-[11px] text-muted-foreground/60 tabular-nums">
             {wordCount === 0 ? "" :
              wordCount >= 300 ? `${wordCount} words · great entry` :
@@ -160,7 +226,7 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest px-0.5">
           Tags
         </label>
-        <TagInput value={tags} onChange={setTags} />
+        <TagInput value={tags} onChange={handleTagsChange} />
       </div>
 
       {/* Media controls */}
@@ -298,7 +364,7 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
         {isSubmitting ? (
           <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</>
         ) : (
-          "Save entry"
+          "Keep this"
         )}
       </Button>
     </div>

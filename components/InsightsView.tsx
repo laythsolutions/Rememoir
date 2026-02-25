@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpen, Flame, CalendarDays, Type } from "lucide-react";
 import {
@@ -77,6 +77,17 @@ function ActivityTooltip({ active, payload }: TooltipEntry) {
 function ActivityChart({ data }: { data: DailyPoint[] }) {
   const hasAnyData = data.some((d) => d.count > 0);
   const maxCount = Math.max(...data.map((d) => d.count), 1);
+  const [primaryHex, setPrimaryHex] = useState("#8a6228");
+  const colorReadRef = useRef(false);
+
+  useEffect(() => {
+    if (colorReadRef.current) return;
+    const hex = getComputedStyle(document.documentElement)
+      .getPropertyValue("--color-primary-hex")
+      .trim();
+    if (hex) setPrimaryHex(hex);
+    colorReadRef.current = true;
+  }, []);
 
   if (!hasAnyData) {
     return (
@@ -110,7 +121,7 @@ function ActivityChart({ data }: { data: DailyPoint[] }) {
           {data.map((entry, index) => (
             <Cell
               key={`cell-${index}`}
-              fill={entry.count > 0 ? "#6366f1" : "transparent"}
+              fill={entry.count > 0 ? primaryHex : "transparent"}
               fillOpacity={entry.count > 0 ? 0.5 + (entry.count / maxCount) * 0.5 : 0}
             />
           ))}

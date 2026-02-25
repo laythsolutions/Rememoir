@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowLeft, Download, FileJson, FileText, Loader2, Upload,
   Github, Check, BookMarked, ChevronRight, ChevronDown, ChevronUp,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -39,6 +40,9 @@ export function SettingsView() {
   // Prompt frequency
   const [promptFrequency, setPromptFrequency] = useState<PromptFrequency>("daily");
 
+  // Backup nudge
+  const [daysSinceExport, setDaysSinceExport] = useState<number | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -46,6 +50,14 @@ export function SettingsView() {
     const prefs = getPreferences();
     setPromptFrequency(prefs.promptFrequency);
     getAllTags().then(setAllTags);
+    if (prefs.lastExportDate) {
+      const days = Math.floor(
+        (Date.now() - new Date(prefs.lastExportDate).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      setDaysSinceExport(days);
+    } else {
+      setDaysSinceExport(999); // never exported
+    }
   }, []);
 
   // Update export preview count when filters change
@@ -78,11 +90,17 @@ export function SettingsView() {
     setTimeout(() => setProfileSaved(false), 2000);
   };
 
+  const recordExport = () => {
+    savePreferences({ lastExportDate: new Date().toISOString() });
+    setDaysSinceExport(0);
+  };
+
   const handleExportJSON = async () => {
     setExportingJSON(true);
     try {
       const entries = await getAllEntries();
       exportJSON(entries, buildExportOpts());
+      recordExport();
     } finally {
       setExportingJSON(false);
     }
@@ -93,6 +111,7 @@ export function SettingsView() {
     try {
       const entries = await getAllEntries();
       await exportPDF(entries, buildExportOpts());
+      recordExport();
     } finally {
       setExportingPDF(false);
     }
@@ -103,6 +122,7 @@ export function SettingsView() {
     try {
       const entries = await getAllEntries();
       exportMarkdown(entries, buildExportOpts());
+      recordExport();
     } finally {
       setExportingMD(false);
     }
@@ -275,6 +295,16 @@ export function SettingsView() {
           {/* Export */}
           <SettingsSection title="Export your data">
             <div className="flex flex-col gap-3">
+              {daysSinceExport !== null && daysSinceExport > 30 && (
+                <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-[13px] text-amber-700 dark:text-amber-400 leading-relaxed">
+                    {daysSinceExport >= 999
+                      ? "You've never exported a backup. Export one now to protect your memories."
+                      : `Last backup was ${daysSinceExport} days ago. Consider exporting a fresh copy.`}
+                  </p>
+                </div>
+              )}
               <p className="text-[13px] text-muted-foreground leading-relaxed">
                 Download all your entries. Your data belongs to you, always.
               </p>

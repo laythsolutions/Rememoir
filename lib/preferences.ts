@@ -5,11 +5,13 @@ export type PromptFrequency = "daily" | "every3days" | "weekly" | "off";
 export interface Preferences {
   promptFrequency: PromptFrequency;
   lastPromptDate: string | null; // YYYY-MM-DD
+  lastExportDate: string | null; // ISO timestamp
 }
 
 const DEFAULTS: Preferences = {
   promptFrequency: "daily",
   lastPromptDate: null,
+  lastExportDate: null,
 };
 
 export function getPreferences(): Preferences {

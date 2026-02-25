@@ -88,6 +88,9 @@
 
   /* Writing area ruled-line color */
   --writing-line-color: oklch(0.905 0.010 75 / 0.5);
+
+  /* Hex approximation for SVG/canvas consumers (e.g. Recharts) */
+  --color-primary-hex: #8a6228;
 }
 
 .dark {
@@ -127,6 +130,15 @@
   --sidebar-ring: oklch(0.556 0 0);
 
   --writing-line-color: oklch(1 0 0 / 6%);
+
+  /* Hex approximation for SVG/canvas consumers */
+  --color-primary-hex: #c4923a;
+
+  /* Slightly lighter card for better background separation */
+  --card: oklch(0.175 0.022 55);
+  --card-foreground: oklch(0.94 0.012 80);
+  --popover: oklch(0.175 0.022 55);
+  --popover-foreground: oklch(0.94 0.012 80);
 }
 
 @layer base {

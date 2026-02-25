@@ -16,7 +16,7 @@ import { computeStats, type JournalStats } from "@/lib/stats";
 import { getProfile } from "@/lib/profile";
 import { getMemories } from "@/lib/autobiography";
 import { getDailyPrompt } from "@/lib/prompts";
-import { isPromptDue, markPromptShown } from "@/lib/preferences";
+import { isPromptDue, markPromptShown, getPreferences } from "@/lib/preferences";
 import type { RememoirEntry } from "@/lib/types";
 import type { Prompt } from "@/lib/prompts";
 
@@ -101,6 +101,7 @@ function ReturningUserHome({
 }) {
   const [showPromptCard, setShowPromptCard] = useState(false);
   const [dailyPrompt, setDailyPrompt] = useState<Prompt | null>(null);
+  const [showBackupNudge, setShowBackupNudge] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -108,6 +109,8 @@ function ReturningUserHome({
       setDailyPrompt(getDailyPrompt());
       setShowPromptCard(true);
     }
+    const { lastExportDate } = getPreferences();
+    if (!lastExportDate) setShowBackupNudge(true);
   }, []);
 
   const handlePromptWrite = () => {
@@ -158,6 +161,19 @@ function ReturningUserHome({
               Keep your {stats!.currentStreak}-day streak alive — write today!
             </p>
           </div>
+        )}
+
+        {/* Backup nudge — shown only until first export */}
+        {showBackupNudge && (
+          <Link href="/settings" onClick={() => setShowBackupNudge(false)}>
+            <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-amber-500/8 border border-amber-500/20 cursor-pointer hover:bg-amber-500/12 transition-colors">
+              <span className="text-amber-600 dark:text-amber-400 text-sm shrink-0">💾</span>
+              <p className="text-[13px] text-amber-700 dark:text-amber-400 font-medium flex-1">
+                Back up your journal — export a copy to keep your memories safe.
+              </p>
+              <ChevronRight className="w-3.5 h-3.5 text-amber-600/60 dark:text-amber-400/60 shrink-0" />
+            </div>
+          </Link>
         )}
 
         {/* Stat pills */}

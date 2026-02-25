@@ -70,9 +70,9 @@ export function AutobiographyView() {
         <div className="flex items-center justify-between py-4 sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border/60">
           <div className="flex items-center gap-3">
             <Link
-              href="/settings"
+              href="/"
               className="p-1.5 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-all duration-150 cursor-pointer"
-              aria-label="Back to settings"
+              aria-label="Back to home"
             >
               <ArrowLeft className="w-4.5 h-4.5" />
             </Link>
@@ -114,6 +114,7 @@ function MemoriesTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
     setMemories(getMemories());
@@ -150,6 +151,7 @@ function MemoriesTab() {
     deleteMemory(id);
     setMemories((prev) => prev.filter((m) => m.id !== id));
     if (expandedId === id) setExpandedId(null);
+    setDeleteConfirmId(null);
   };
 
   const handleCancel = () => {
@@ -275,13 +277,31 @@ function MemoriesTab() {
                     Edit
                   </button>
                   <span className="text-border">·</span>
-                  <button
-                    onClick={() => handleDelete(memory.id)}
-                    className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    Delete
-                  </button>
+                  {deleteConfirmId === memory.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">Delete?</span>
+                      <button
+                        onClick={() => handleDelete(memory.id)}
+                        className="text-xs font-semibold text-destructive hover:underline cursor-pointer"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirmId(null)}
+                        className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeleteConfirmId(memory.id)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Delete
+                    </button>
+                  )}
                   <span className="ml-auto text-[10px] text-muted-foreground/60">
                     {new Date(memory.createdAt).toLocaleDateString("en-US", {
                       month: "short", day: "numeric", year: "numeric",
