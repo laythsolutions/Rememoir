@@ -87,17 +87,22 @@ export function computeStats(entries: RememoirEntry[]): JournalStats {
   }
 
   // ── Last 30 days ─────────────────────────────────────────────────────────────
+  // Build a count map first (O(n)) rather than filtering per day (O(n×30))
+  const countByDate = new Map<string, number>();
+  for (const e of active) {
+    const k = entryDateKey(e.createdAt);
+    countByDate.set(k, (countByDate.get(k) ?? 0) + 1);
+  }
+
   const last30Days: DailyPoint[] = [];
   for (let i = 29; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     const dateKey = localDateKey(date);
-    const dayEntries = active.filter((e) => entryDateKey(e.createdAt) === dateKey);
-
     last30Days.push({
       dateKey,
       label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      count: dayEntries.length,
+      count: countByDate.get(dateKey) ?? 0,
     });
   }
 

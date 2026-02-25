@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Trash2, ChevronDown, ChevronUp, Mic, Video, Pencil, Check, X, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Trash2, ChevronDown, ChevronUp, Mic, Video, Pencil, Check, X, Loader2, ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,6 +35,8 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
   const [expanded, setExpanded] = useState(false);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
   const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
+  const [imageBlobUrls, setImageBlobUrls] = useState<string[]>([]);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
@@ -56,12 +58,28 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
     }
   }, [expanded, entry.audio, entry.video, audioBlobUrl, videoBlobUrl]);
 
+  // Load image blob URLs eagerly (images are shown in collapsed state too)
+  useEffect(() => {
+    if (!entry.images?.length) return;
+    let cancelled = false;
+    Promise.all(entry.images.map((img) => getMediaBlobUrl(img.path)))
+      .then((urls) => { if (!cancelled) setImageBlobUrls(urls); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [entry.images]);
+
   useEffect(() => {
     return () => {
       if (audioBlobUrl) URL.revokeObjectURL(audioBlobUrl);
       if (videoBlobUrl) URL.revokeObjectURL(videoBlobUrl);
+      imageBlobUrls.forEach((u) => URL.revokeObjectURL(u));
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioBlobUrl, videoBlobUrl]);
+
+  const closeLightbox = useCallback((e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) setLightboxUrl(null);
+  }, []);
 
   const handleDelete = async () => {
     if (!entry.id) return;
@@ -152,6 +170,12 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
           </div>
 
           <div className="flex items-center gap-0.5 -mr-1 shrink-0">
+            {entry.images && entry.images.length > 0 && (
+              <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0.5 rounded-md h-auto">
+                <ImageIcon className="w-2.5 h-2.5" />
+                {entry.images.length}
+              </Badge>
+            )}
             {entry.audio && (
               <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0.5 rounded-md h-auto">
                 <Mic className="w-2.5 h-2.5" />
@@ -209,6 +233,28 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
           </p>
         )}
 
+        {/* Image thumbnails */}
+        {imageBlobUrls.length > 0 && (
+          <div className={`grid gap-1.5 ${imageBlobUrls.length === 1 ? "grid-cols-1" : imageBlobUrls.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+            {imageBlobUrls.slice(0, 4).map((url, i) => (
+              <button
+                key={url}
+                type="button"
+                onClick={() => setLightboxUrl(url)}
+                className="relative aspect-square rounded-lg overflow-hidden border border-border hover:opacity-90 transition-opacity cursor-pointer"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                {i === 3 && imageBlobUrls.length > 4 && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <span className="text-white text-sm font-semibold">+{imageBlobUrls.length - 4}</span>
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Tags */}
         {entry.tags && entry.tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
@@ -249,6 +295,31 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
           </div>
         )}
       </div>
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={closeLightbox}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Photo viewer"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxUrl}
+            alt="Full size photo"
+            className="max-w-full max-h-full rounded-xl object-contain shadow-2xl"
+          />
+          <button
+            onClick={() => setLightboxUrl(null)}
+            className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="w-4.5 h-4.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Flame, CalendarDays, Type } from "lucide-react";
+import { ArrowLeft, BookOpen, Flame, CalendarDays, Type, PenLine } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -273,6 +273,22 @@ export function InsightsView() {
               <Section title="Writing habits">
                 <WritingBreakdown stats={stats} />
               </Section>
+
+              {/* CTAs */}
+              <div className="flex gap-3">
+                <Link href="/entry" className="flex-1">
+                  <div className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary text-primary-foreground font-semibold text-[14px] shadow-md shadow-primary/20 hover:bg-primary/90 transition-all duration-200 cursor-pointer">
+                    <PenLine className="w-4 h-4" />
+                    Write today
+                  </div>
+                </Link>
+                <Link href="/timeline" className="flex-1">
+                  <div className="flex items-center justify-center gap-2 py-3 rounded-2xl border border-border bg-card font-medium text-[14px] hover:border-primary/30 hover:text-primary transition-all duration-200 cursor-pointer shadow-sm">
+                    <BookOpen className="w-4 h-4" />
+                    View journal
+                  </div>
+                </Link>
+              </div>
             </div>
           ) : null}
         </div>

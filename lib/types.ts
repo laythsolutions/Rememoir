@@ -9,6 +9,15 @@ export interface MediaRef {
   size: number;
 }
 
+export interface ImageRef {
+  /** OPFS file path relative to the Rememoir root */
+  path: string;
+  /** MIME type e.g. image/jpeg, image/png, image/webp */
+  mimeType: string;
+  /** File size in bytes */
+  size: number;
+}
+
 export interface RememoirEntry {
   /** Auto-incremented primary key */
   id?: number;
@@ -26,6 +35,8 @@ export interface RememoirEntry {
   audio?: MediaRef;
   /** Optional video recording reference in OPFS */
   video?: MediaRef;
+  /** Optional photo attachments stored in OPFS */
+  images?: ImageRef[];
   /** Whether this entry was deleted (soft delete for sync) */
   deleted?: boolean;
 }

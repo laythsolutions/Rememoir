@@ -2,16 +2,17 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Mic, Video, Square, Trash2, FileText, CornerUpLeft } from "lucide-react";
+import { Loader2, Mic, Video, Square, Trash2, FileText, CornerUpLeft, ImagePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TagInput } from "@/components/TagInput";
 import { RememoirPromptDisplay } from "@/components/RememoirPromptDisplay";
 import { addEntry } from "@/lib/db";
 import { getDailyPrompt } from "@/lib/prompts";
 import { useEntryStore } from "@/store/entryStore";
-import type { RememoirEntry } from "@/lib/types";
+import type { RememoirEntry, ImageRef } from "@/lib/types";
 import { useRecording } from "@/hooks/useRecording";
 import { formatDuration } from "@/lib/utils";
+import { saveMediaFile } from "@/lib/opfs";
 
 // ─── Transcript card ─────────────────────────────────────────────────────────
 
@@ -65,6 +66,10 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
   const [error, setError] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const { addEntryToFeed } = useEntryStore();
 
@@ -128,6 +133,28 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
 
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
 
+  const handleImageFiles = useCallback((files: FileList | null) => {
+    if (!files) return;
+    const newFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    const newUrls = newFiles.map((f) => URL.createObjectURL(f));
+    setImageFiles((prev) => [...prev, ...newFiles]);
+    setImagePreviewUrls((prev) => [...prev, ...newUrls]);
+  }, []);
+
+  const removeImage = useCallback((index: number) => {
+    setImagePreviewUrls((prev) => {
+      URL.revokeObjectURL(prev[index]);
+      return prev.filter((_, i) => i !== index);
+    });
+    setImageFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // Revoke preview URLs on unmount
+  useEffect(() => {
+    return () => { imagePreviewUrls.forEach((u) => URL.revokeObjectURL(u)); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const insertTranscript = useCallback(
     (transcript: string) => {
       setText((prev) => (prev ? `${prev}\n\n${transcript}` : transcript));
@@ -143,8 +170,8 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
   );
 
   const handleSubmit = useCallback(async () => {
-    if (!text.trim() && !audioState.mediaRef && !videoState.mediaRef) {
-      setError("Write something, or add a recording.");
+    if (!text.trim() && !audioState.mediaRef && !videoState.mediaRef && imageFiles.length === 0) {
+      setError("Write something, or add a recording or photo.");
       return;
     }
 
@@ -152,6 +179,19 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
     setIsSubmitting(true);
     try {
       const now = new Date().toISOString();
+
+      let images: ImageRef[] | undefined;
+      if (imageFiles.length > 0) {
+        images = await Promise.all(
+          imageFiles.map(async (file) => {
+            const ext = file.name.split(".").pop() ?? "jpg";
+            const filename = `img_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+            const path = await saveMediaFile(file, filename);
+            return { path, mimeType: file.type, size: file.size };
+          })
+        );
+      }
+
       const entryData: Omit<RememoirEntry, "id"> = {
         text: text.trim(),
         tags: tags.length > 0 ? tags : undefined,
@@ -160,6 +200,7 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
         promptId: showPrompt ? prompt.id : undefined,
         audio: audioState.mediaRef ?? undefined,
         video: videoState.mediaRef ?? undefined,
+        images,
       };
 
       const id = await addEntry(entryData);
@@ -172,7 +213,7 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
     } finally {
       setIsSubmitting(false);
     }
-  }, [text, tags, audioState.mediaRef, videoState.mediaRef, showPrompt, prompt.id, addEntryToFeed, router]);
+  }, [text, tags, audioState.mediaRef, videoState.mediaRef, imageFiles, showPrompt, prompt.id, addEntryToFeed, router]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -194,7 +235,9 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
 
       {/* Writing area */}
       <div className="flex flex-col gap-1.5">
+        <label htmlFor="entry-text" className="sr-only">Journal entry</label>
         <textarea
+          id="entry-text"
           ref={textareaRef}
           value={text}
           onChange={(e) => handleTextChange(e.target.value)}
@@ -306,7 +349,47 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
               </button>
             </div>
           )}
+          {/* Photos */}
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => handleImageFiles(e.target.files)}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={audioState.isRecording || videoState.isRecording}
+            className="gap-2 h-9 rounded-xl cursor-pointer"
+          >
+            <ImagePlus className="w-3.5 h-3.5" />
+            Photo
+          </Button>
         </div>
+
+        {/* Image previews */}
+        {imagePreviewUrls.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            {imagePreviewUrls.map((url, i) => (
+              <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-border">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeImage(i)}
+                  className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
+                  aria-label="Remove photo"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Video preview — always in DOM to avoid display:none playback block */}

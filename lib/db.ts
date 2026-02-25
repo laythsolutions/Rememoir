@@ -109,3 +109,38 @@ export async function getAllTags(): Promise<string[]> {
   const keys = await db.entries.orderBy("tags").uniqueKeys();
   return (keys as string[]).filter((k) => typeof k === "string").sort();
 }
+
+/** Remove a tag from every entry that has it */
+export async function removeTagFromAllEntries(tag: string): Promise<void> {
+  const entries = await db.entries
+    .filter((e) => !e.deleted && (e.tags ?? []).includes(tag))
+    .toArray();
+  const now = new Date().toISOString();
+  await Promise.all(
+    entries.map((e) =>
+      db.entries.update(e.id!, {
+        tags: (e.tags ?? []).filter((t) => t !== tag),
+        updatedAt: now,
+      })
+    )
+  );
+}
+
+/** Rename a tag across every entry that has it */
+export async function renameTagInAllEntries(
+  oldTag: string,
+  newTag: string
+): Promise<void> {
+  const entries = await db.entries
+    .filter((e) => !e.deleted && (e.tags ?? []).includes(oldTag))
+    .toArray();
+  const now = new Date().toISOString();
+  await Promise.all(
+    entries.map((e) =>
+      db.entries.update(e.id!, {
+        tags: (e.tags ?? []).map((t) => (t === oldTag ? newTag : t)),
+        updatedAt: now,
+      })
+    )
+  );
+}
