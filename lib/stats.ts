@@ -15,6 +15,8 @@ export interface JournalStats {
   longestStreak: number;
   /** Total word count across all entries */
   totalWords: number;
+  /** Word count of the longest single entry */
+  longestEntryWords: number;
   /** Entries written in the current calendar month */
   entriesThisMonth: number;
   /** One point per day for the last 30 days */
@@ -38,10 +40,14 @@ export function computeStats(entries: RememoirEntry[]): JournalStats {
   const active = entries.filter((e) => !e.deleted);
   const total = active.length;
 
-  // ── Total words ──────────────────────────────────────────────────────────────
-  const totalWords = active.reduce((sum, e) => {
-    return sum + (e.text?.trim().split(/\s+/).filter(Boolean).length ?? 0);
-  }, 0);
+  // ── Total words + longest entry ───────────────────────────────────────────────
+  let totalWords = 0;
+  let longestEntryWords = 0;
+  for (const e of active) {
+    const wc = e.text?.trim().split(/\s+/).filter(Boolean).length ?? 0;
+    totalWords += wc;
+    if (wc > longestEntryWords) longestEntryWords = wc;
+  }
 
   // ── This month ───────────────────────────────────────────────────────────────
   const now = new Date();
@@ -111,6 +117,7 @@ export function computeStats(entries: RememoirEntry[]): JournalStats {
     currentStreak,
     longestStreak,
     totalWords,
+    longestEntryWords,
     entriesThisMonth,
     last30Days,
   };

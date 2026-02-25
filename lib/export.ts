@@ -23,11 +23,13 @@ export function exportJSON(entries: RememoirEntry[], opts?: ExportOpts): void {
   const data = {
     exported_at: new Date().toISOString(),
     version: 1,
+    note: "Media files (audio, video, images) are stored locally and not included in this export.",
     entries: filtered.map((e) => ({
       ...e,
       // Omit OPFS paths — media files are not portable in JSON export
       audio: e.audio ? { mimeType: e.audio.mimeType, duration: e.audio.duration } : undefined,
       video: e.video ? { mimeType: e.video.mimeType, duration: e.video.duration } : undefined,
+      images: e.images ? e.images.map((img) => ({ mimeType: img.mimeType, size: img.size })) : undefined,
     })),
   };
 
@@ -110,8 +112,9 @@ export async function exportPDF(entries: RememoirEntry[], opts?: ExportOpts): Pr
       addText(`Tags: ${entry.tags.map((t) => `#${t}`).join(", ")}`, 9, false, [120, 120, 120]);
     }
 
-    if (entry.audio) addText("🎙 Audio recording attached", 9, false, [120, 120, 120]);
-    if (entry.video) addText("📹 Video recording attached", 9, false, [120, 120, 120]);
+    if (entry.audio) addText("Audio recording attached", 9, false, [120, 120, 120]);
+    if (entry.video) addText("Video recording attached", 9, false, [120, 120, 120]);
+    if (entry.images?.length) addText(`${entry.images.length} photo${entry.images.length === 1 ? "" : "s"} attached`, 9, false, [120, 120, 120]);
 
     // Separator
     doc.setDrawColor(220, 220, 220);
@@ -137,10 +140,9 @@ export function exportMarkdown(entries: RememoirEntry[], opts?: ExportOpts): voi
       lines.push("");
       lines.push(`Tags: ${entry.tags.map((t) => `#${t}`).join(" ")}`);
     }
-    if (entry.audio) lines.push("");
-    if (entry.audio) lines.push("_Audio recording attached_");
-    if (entry.video) lines.push("");
-    if (entry.video) lines.push("_Video recording attached_");
+    if (entry.audio) { lines.push(""); lines.push("_Audio recording attached_"); }
+    if (entry.video) { lines.push(""); lines.push("_Video recording attached_"); }
+    if (entry.images?.length) { lines.push(""); lines.push(`_${entry.images.length} photo${entry.images.length === 1 ? "" : "s"} attached_`); }
     lines.push("");
     lines.push("---");
     lines.push("");

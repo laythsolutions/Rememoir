@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Shield, Wifi, Download, ArrowRight, ArrowLeft } from "lucide-react";
+import { Shield, Wifi, Download, ArrowRight, ArrowLeft, Bell } from "lucide-react";
 import { saveProfile } from "@/lib/profile";
 import { getDailyPrompt } from "@/lib/prompts";
+import { savePreferences, type PromptFrequency } from "@/lib/preferences";
 
 const ONBOARDING_KEY = "rememoir_onboarded";
 
@@ -13,6 +14,7 @@ export function OnboardingModal() {
   const [show, setShow] = useState(false);
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
+  const [promptFreq, setPromptFreq] = useState<PromptFrequency>("daily");
   const router = useRouter();
 
   useEffect(() => {
@@ -29,6 +31,9 @@ export function OnboardingModal() {
     if (step === 0) {
       saveProfile({ name: name.trim(), bio: "" });
     }
+    if (step === 2) {
+      savePreferences({ promptFrequency: promptFreq });
+    }
     setStep((s) => s + 1);
   };
 
@@ -43,7 +48,7 @@ export function OnboardingModal() {
       <div className="w-full max-w-md bg-card rounded-2xl shadow-2xl border border-border overflow-hidden">
         {/* Progress dots */}
         <div className="flex justify-center gap-2 pt-5 pb-1">
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <div
               key={i}
               className={`rounded-full transition-all duration-300 ${
@@ -127,7 +132,55 @@ export function OnboardingModal() {
               </div>
             </div>
 
-            {/* Step 2 — First prompt */}
+            {/* Step 2 — Prompt frequency */}
+            <div className="min-w-full px-6 pt-5 pb-6 flex flex-col gap-5">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 shrink-0 w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Bell className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">Writing prompts</h2>
+                  <p className="text-muted-foreground text-sm mt-1">
+                    How often would you like a prompt to inspire you?
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    { value: "daily", label: "Daily", sub: "A fresh question every day" },
+                    { value: "every3days", label: "Every 3 days", sub: "A gentle nudge" },
+                    { value: "weekly", label: "Weekly", sub: "Once a week" },
+                    { value: "off", label: "Off", sub: "No prompts" },
+                  ] as { value: PromptFrequency; label: string; sub: string }[]
+                ).map(({ value, label, sub }) => (
+                  <button
+                    key={value}
+                    onClick={() => setPromptFreq(value)}
+                    className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all duration-150 cursor-pointer ${
+                      promptFreq === value
+                        ? "bg-primary/8 border-primary/30 shadow-sm"
+                        : "border-border bg-background hover:border-border/80"
+                    }`}
+                  >
+                    <span className={`text-[13px] font-semibold ${promptFreq === value ? "text-primary" : ""}`}>{label}</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">{sub}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={goBack} className="gap-1.5">
+                  <ArrowLeft className="w-4 h-4" />
+                  Back
+                </Button>
+                <Button onClick={goNext} className="flex-1 gap-2">
+                  Next
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Step 3 — First prompt */}
             <div className="min-w-full px-6 pt-5 pb-6 flex flex-col gap-5">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">Your first prompt</h2>

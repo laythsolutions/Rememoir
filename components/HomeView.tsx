@@ -102,6 +102,8 @@ function ReturningUserHome({
   const [showPromptCard, setShowPromptCard] = useState(false);
   const [dailyPrompt, setDailyPrompt] = useState<Prompt | null>(null);
   const [showBackupNudge, setShowBackupNudge] = useState(false);
+  const [installEvent, setInstallEvent] = useState<Event & { prompt(): Promise<void> } | null>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -111,7 +113,29 @@ function ReturningUserHome({
     }
     const { lastExportDate } = getPreferences();
     if (!lastExportDate) setShowBackupNudge(true);
+
+    const dismissed = localStorage.getItem("rememoir_pwa_dismissed");
+    const handler = (e: Event) => {
+      e.preventDefault();
+      if (!dismissed) {
+        setInstallEvent(e as Event & { prompt(): Promise<void> });
+        setShowInstallBanner(true);
+      }
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
+
+  const handleInstall = async () => {
+    if (!installEvent) return;
+    await installEvent.prompt();
+    setShowInstallBanner(false);
+  };
+
+  const dismissInstall = () => {
+    localStorage.setItem("rememoir_pwa_dismissed", "1");
+    setShowInstallBanner(false);
+  };
 
   const handlePromptWrite = () => {
     markPromptShown();
@@ -174,6 +198,31 @@ function ReturningUserHome({
               <ChevronRight className="w-3.5 h-3.5 text-amber-600/60 dark:text-amber-400/60 shrink-0" />
             </div>
           </Link>
+        )}
+
+        {/* PWA install banner */}
+        {showInstallBanner && (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-card border border-border shadow-sm">
+            <Download className="w-4 h-4 text-primary shrink-0" />
+            <p className="text-[13px] text-foreground/80 flex-1 leading-snug">
+              Add Rememoir to your home screen for the best experience.
+            </p>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleInstall}
+                className="text-[12px] font-semibold text-primary hover:text-primary/80 transition-colors cursor-pointer"
+              >
+                Install
+              </button>
+              <button
+                onClick={dismissInstall}
+                aria-label="Dismiss"
+                className="text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Stat pills */}

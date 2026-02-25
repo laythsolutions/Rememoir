@@ -147,7 +147,15 @@ export function CalendarView() {
                   {date.getDate()}
                 </span>
                 {data && (
-                  <span className="w-1.5 h-1.5 rounded-full mt-0.5 shrink-0 bg-primary" />
+                  <span className="flex gap-[3px] mt-0.5">
+                    {Array.from({ length: Math.min(data.entries.length, 3) }).map((_, di) => (
+                      <span
+                        key={di}
+                        className="w-1 h-1 rounded-full bg-primary shrink-0"
+                        style={{ opacity: 0.5 + (di / Math.max(data.entries.length - 1, 1)) * 0.5 }}
+                      />
+                    ))}
+                  </span>
                 )}
               </button>
             );

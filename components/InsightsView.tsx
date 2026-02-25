@@ -146,6 +146,7 @@ function WritingBreakdown({ stats }: { stats: JournalStats }) {
     { label: "Days with 2+ entries", value: String(daysWithMultiple) },
     { label: "Most in a single day", value: String(maxInDay) },
     { label: "Avg words per entry", value: avgWords > 0 ? String(avgWords) : "—" },
+    { label: "Longest entry", value: stats.longestEntryWords > 0 ? `${stats.longestEntryWords} words` : "—" },
     { label: "Total words written", value: stats.totalWords > 0 ? stats.totalWords.toLocaleString() : "—" },
   ];
 

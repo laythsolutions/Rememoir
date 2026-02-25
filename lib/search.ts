@@ -59,8 +59,10 @@ export function removeFromIndex(id: number): void {
 
 export function searchEntries(query: string): number[] {
   if (!query.trim()) return [];
+  // Strip leading # so "#travel" matches tag "travel"
+  const q = query.trim().replace(/^#/, "");
   return getIndex()
-    .search(query)
+    .search(q)
     .map((r) => r.id as number);
 }
 

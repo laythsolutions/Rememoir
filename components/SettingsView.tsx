@@ -411,6 +411,9 @@ export function SettingsView() {
               <p className="text-[13px] text-muted-foreground leading-relaxed">
                 Download all your entries. Your data belongs to you, always.
               </p>
+              <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
+                Note: audio, video, and photo files are stored locally and are not included in exports.
+              </p>
 
               {/* Export options toggle */}
               <button

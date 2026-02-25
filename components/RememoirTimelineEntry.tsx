@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Trash2, ChevronDown, ChevronUp, Mic, Video, Pencil, Check, X, Loader2, ImageIcon } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Trash2, ChevronDown, ChevronUp, Mic, Video, Pencil, Check, X, Loader2, ImageIcon, ImagePlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/TagInput";
 import { deleteEntry, updateEntry } from "@/lib/db";
-import { getMediaBlobUrl } from "@/lib/opfs";
+import { getMediaBlobUrl, saveMediaFile, deleteMediaFile } from "@/lib/opfs";
 import { formatDayOfWeek, formatDateLong, formatTime } from "@/lib/utils";
 import { useEntryStore } from "@/store/entryStore";
-import type { RememoirEntry } from "@/lib/types";
+import type { RememoirEntry, ImageRef } from "@/lib/types";
 
 interface RememoirTimelineEntryProps {
   entry: RememoirEntry;
@@ -44,6 +44,13 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
   const [editText, setEditText] = useState(entry.text);
   const [editTags, setEditTags] = useState<string[]>(entry.tags ?? []);
   const [isSaving, setIsSaving] = useState(false);
+  // Image editing
+  const [editImages, setEditImages] = useState<ImageRef[]>(entry.images ?? []);
+  const [editImageBlobUrls, setEditImageBlobUrls] = useState<string[]>([]);
+  const [removedPaths, setRemovedPaths] = useState<string[]>([]);
+  const [newImageFiles, setNewImageFiles] = useState<File[]>([]);
+  const [newImagePreviewUrls, setNewImagePreviewUrls] = useState<string[]>([]);
+  const editImageInputRef = useRef<HTMLInputElement>(null);
 
   const { removeEntry, updateEntryInStore } = useEntryStore();
   const isLong = entry.text.length > 220;
@@ -81,6 +88,36 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
     if (e.target === e.currentTarget) setLightboxUrl(null);
   }, []);
 
+  const enterEditMode = useCallback(() => {
+    setEditImages(entry.images ?? []);
+    setRemovedPaths([]);
+    setNewImageFiles([]);
+    setNewImagePreviewUrls([]);
+    // Reuse already-loaded imageBlobUrls for existing images
+    setEditImageBlobUrls([...imageBlobUrls]);
+    setIsEditing(true);
+  }, [entry.images, imageBlobUrls]);
+
+  const handleEditAddImages = useCallback((files: FileList | null) => {
+    if (!files) return;
+    const newFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    const newUrls = newFiles.map((f) => URL.createObjectURL(f));
+    setNewImageFiles((prev) => [...prev, ...newFiles]);
+    setNewImagePreviewUrls((prev) => [...prev, ...newUrls]);
+  }, []);
+
+  const handleEditRemoveExisting = useCallback((index: number) => {
+    setRemovedPaths((prev) => [...prev, editImages[index].path]);
+    setEditImages((prev) => prev.filter((_, i) => i !== index));
+    setEditImageBlobUrls((prev) => prev.filter((_, i) => i !== index));
+  }, [editImages]);
+
+  const handleEditRemoveNew = useCallback((index: number) => {
+    URL.revokeObjectURL(newImagePreviewUrls[index]);
+    setNewImageFiles((prev) => prev.filter((_, i) => i !== index));
+    setNewImagePreviewUrls((prev) => prev.filter((_, i) => i !== index));
+  }, [newImagePreviewUrls]);
+
   const handleDelete = async () => {
     if (!entry.id) return;
     setIsDeleting(true);
@@ -99,8 +136,28 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
     try {
       const updatedAt = new Date().toISOString();
       const tags = editTags.length > 0 ? editTags : undefined;
-      await updateEntry(entry.id, { text: editText, tags });
-      updateEntryInStore(entry.id, { text: editText, tags, updatedAt });
+
+      // Delete removed images from OPFS
+      await Promise.all(removedPaths.map((p) => deleteMediaFile(p)));
+
+      // Save new images to OPFS
+      const savedNew: ImageRef[] = await Promise.all(
+        newImageFiles.map(async (file) => {
+          const ext = file.name.split(".").pop() ?? "jpg";
+          const filename = `img_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+          const path = await saveMediaFile(file, filename);
+          return { path, mimeType: file.type, size: file.size };
+        })
+      );
+
+      const images = [...editImages, ...savedNew];
+      const finalImages = images.length > 0 ? images : undefined;
+
+      await updateEntry(entry.id, { text: editText, tags, images: finalImages });
+      updateEntryInStore(entry.id, { text: editText, tags, images: finalImages, updatedAt });
+
+      // Revoke new preview URLs
+      newImagePreviewUrls.forEach((u) => URL.revokeObjectURL(u));
       setIsEditing(false);
     } catch {
       // keep editing
@@ -112,6 +169,7 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
   const handleCancelEdit = () => {
     setEditText(entry.text);
     setEditTags(entry.tags ?? []);
+    newImagePreviewUrls.forEach((u) => URL.revokeObjectURL(u));
     setIsEditing(false);
   };
 
@@ -124,6 +182,7 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
   // ── Edit mode ────────────────────────────────────────────────────────────────
 
   if (isEditing) {
+    const allEditUrls = [...editImageBlobUrls, ...newImagePreviewUrls];
     return (
       <div className="rounded-2xl border border-primary/30 border-l-[3px] border-l-primary/60 bg-card shadow-sm p-4 flex flex-col gap-3">
         <Textarea
@@ -133,7 +192,42 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
           autoFocus
         />
         <TagInput value={editTags} onChange={setEditTags} />
-        <div className="flex gap-2">
+
+        {/* Image edit area */}
+        {allEditUrls.length > 0 && (
+          <div className={`grid gap-1.5 ${allEditUrls.length === 1 ? "grid-cols-1" : allEditUrls.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+            {editImageBlobUrls.map((url, i) => (
+              <div key={`existing-${i}`} className="relative aspect-square rounded-lg overflow-hidden border border-border">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => handleEditRemoveExisting(i)}
+                  className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
+                  aria-label="Remove photo"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+            {newImagePreviewUrls.map((url, i) => (
+              <div key={`new-${i}`} className="relative aspect-square rounded-lg overflow-hidden border border-primary/30">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => handleEditRemoveNew(i)}
+                  className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
+                  aria-label="Remove photo"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 flex-wrap">
           <Button size="sm" onClick={handleSaveEdit} disabled={isSaving} className="gap-1.5 rounded-xl h-8 cursor-pointer">
             {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
             Save
@@ -141,6 +235,25 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
           <Button size="sm" variant="outline" onClick={handleCancelEdit} className="gap-1.5 rounded-xl h-8 cursor-pointer">
             <X className="w-3.5 h-3.5" />
             Cancel
+          </Button>
+          <input
+            ref={editImageInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => handleEditAddImages(e.target.files)}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            type="button"
+            onClick={() => editImageInputRef.current?.click()}
+            disabled={isSaving}
+            className="gap-1.5 rounded-xl h-8 cursor-pointer ml-auto"
+          >
+            <ImagePlus className="w-3.5 h-3.5" />
+            Photo
           </Button>
         </div>
       </div>
@@ -189,7 +302,7 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
               </Badge>
             )}
             <button
-              onClick={() => setIsEditing(true)}
+              onClick={enterEditMode}
               aria-label="Edit entry"
               className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-all duration-150 cursor-pointer"
             >
