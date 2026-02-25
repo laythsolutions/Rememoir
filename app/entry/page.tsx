@@ -8,7 +8,13 @@ export const metadata: Metadata = {
   title: "New Entry",
 };
 
-export default function EntryPage() {
+export default async function EntryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ prompt?: string }>;
+}) {
+  const { prompt } = await searchParams;
+
   return (
     <main className="min-h-screen bg-background">
       <div className="max-w-2xl mx-auto px-4">
@@ -28,7 +34,7 @@ export default function EntryPage() {
         </div>
 
         <div className="py-6 animate-page-in">
-          <RememoirEntryForm />
+          <RememoirEntryForm initialPrompt={prompt} />
         </div>
       </div>
     </main>

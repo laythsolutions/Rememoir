@@ -14,9 +14,23 @@ import type { RememoirEntry } from "@/lib/types";
 
 interface RememoirTimelineEntryProps {
   entry: RememoirEntry;
+  highlightQuery?: string;
 }
 
-export function RememoirTimelineEntry({ entry }: RememoirTimelineEntryProps) {
+function highlightText(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  return parts.map((part, i) =>
+    part.toLowerCase() === query.toLowerCase() ? (
+      <mark key={i} className="bg-primary/20 text-foreground rounded-sm px-0.5">{part}</mark>
+    ) : (
+      part
+    )
+  );
+}
+
+export function RememoirTimelineEntry({ entry, highlightQuery }: RememoirTimelineEntryProps) {
   const [expanded, setExpanded] = useState(false);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
   const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
@@ -156,7 +170,7 @@ export function RememoirTimelineEntry({ entry }: RememoirTimelineEntryProps) {
         {/* Text */}
         {entry.text && (
           <p className="text-[14px] leading-[1.7] text-foreground/85 whitespace-pre-wrap">
-            {previewText}
+            {highlightQuery ? highlightText(previewText, highlightQuery) : previewText}
           </p>
         )}
 

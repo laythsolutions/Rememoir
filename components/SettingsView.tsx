@@ -2,19 +2,24 @@
 
 import { useRef, useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Download, FileJson, Loader2, Upload, Github, Check, BookMarked, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft, Download, FileJson, FileText, Loader2, Upload,
+  Github, Check, BookMarked, ChevronRight, ChevronDown, ChevronUp,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { StorageIndicator } from "@/components/StorageIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { getAllEntries, getEntryCount } from "@/lib/db";
-import { exportJSON, exportPDF } from "@/lib/export";
+import { getAllEntries, getEntryCount, getAllTags } from "@/lib/db";
+import { exportJSON, exportPDF, exportMarkdown, type ExportOpts } from "@/lib/export";
 import { importJSON, type ImportResult } from "@/lib/import";
 import { getProfile, saveProfile, type UserProfile } from "@/lib/profile";
+import { getPreferences, savePreferences, type PromptFrequency } from "@/lib/preferences";
 
 export function SettingsView() {
   const [exportingJSON, setExportingJSON] = useState(false);
   const [exportingPDF, setExportingPDF] = useState(false);
+  const [exportingMD, setExportingMD] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -23,11 +28,49 @@ export function SettingsView() {
   const [profile, setProfile] = useState<UserProfile>({ name: "", bio: "" });
   const [profileSaved, setProfileSaved] = useState(false);
 
+  // Export options
+  const [showExportOptions, setShowExportOptions] = useState(false);
+  const [exportTag, setExportTag] = useState<string>("");
+  const [exportFrom, setExportFrom] = useState<string>("");
+  const [exportTo, setExportTo] = useState<string>("");
+  const [exportCount, setExportCount] = useState<number | null>(null);
+  const [allTags, setAllTags] = useState<string[]>([]);
+
+  // Prompt frequency
+  const [promptFrequency, setPromptFrequency] = useState<PromptFrequency>("daily");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setProfile(getProfile());
+    const prefs = getPreferences();
+    setPromptFrequency(prefs.promptFrequency);
+    getAllTags().then(setAllTags);
   }, []);
+
+  // Update export preview count when filters change
+  useEffect(() => {
+    if (!showExportOptions) return;
+    getAllEntries().then((all) => {
+      const opts = buildExportOpts();
+      const count = all.filter((e) => {
+        if (opts.tag && !e.tags?.includes(opts.tag)) return false;
+        if (opts.from && e.createdAt < opts.from) return false;
+        if (opts.to && e.createdAt > opts.to + "T23:59:59.999Z") return false;
+        return true;
+      }).length;
+      setExportCount(count);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showExportOptions, exportTag, exportFrom, exportTo]);
+
+  function buildExportOpts(): ExportOpts {
+    return {
+      tag: exportTag || undefined,
+      from: exportFrom || undefined,
+      to: exportTo || undefined,
+    };
+  }
 
   const handleSaveProfile = () => {
     saveProfile(profile);
@@ -39,7 +82,7 @@ export function SettingsView() {
     setExportingJSON(true);
     try {
       const entries = await getAllEntries();
-      exportJSON(entries);
+      exportJSON(entries, buildExportOpts());
     } finally {
       setExportingJSON(false);
     }
@@ -49,9 +92,19 @@ export function SettingsView() {
     setExportingPDF(true);
     try {
       const entries = await getAllEntries();
-      await exportPDF(entries);
+      await exportPDF(entries, buildExportOpts());
     } finally {
       setExportingPDF(false);
+    }
+  };
+
+  const handleExportMD = async () => {
+    setExportingMD(true);
+    try {
+      const entries = await getAllEntries();
+      exportMarkdown(entries, buildExportOpts());
+    } finally {
+      setExportingMD(false);
     }
   };
 
@@ -79,6 +132,11 @@ export function SettingsView() {
   const loadCount = async () => {
     const count = await getEntryCount();
     setEntryCount(count);
+  };
+
+  const handlePromptFrequency = (freq: PromptFrequency) => {
+    setPromptFrequency(freq);
+    savePreferences({ promptFrequency: freq });
   };
 
   return (
@@ -141,6 +199,37 @@ export function SettingsView() {
             </div>
           </SettingsSection>
 
+          {/* Prompts */}
+          <SettingsSection title="Prompts">
+            <div className="flex flex-col gap-3">
+              <p className="text-[13px] text-muted-foreground leading-relaxed">
+                How often should a writing prompt appear on your home screen?
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { value: "daily", label: "Daily" },
+                    { value: "every3days", label: "Every 3 days" },
+                    { value: "weekly", label: "Weekly" },
+                    { value: "off", label: "Off" },
+                  ] as { value: PromptFrequency; label: string }[]
+                ).map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => handlePromptFrequency(value)}
+                    className={`px-3.5 py-2 rounded-xl border text-[13px] font-medium transition-all duration-150 cursor-pointer ${
+                      promptFrequency === value
+                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-border/80"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </SettingsSection>
+
           {/* My Story */}
           <SettingsSection title="My Story">
             <Link
@@ -189,6 +278,77 @@ export function SettingsView() {
               <p className="text-[13px] text-muted-foreground leading-relaxed">
                 Download all your entries. Your data belongs to you, always.
               </p>
+
+              {/* Export options toggle */}
+              <button
+                onClick={() => setShowExportOptions((v) => !v)}
+                className="flex items-center justify-between w-full px-3.5 py-2.5 rounded-xl border border-border bg-background/60 hover:bg-muted/40 transition-all duration-150 cursor-pointer"
+              >
+                <span className="text-[13px] font-medium text-foreground/80">
+                  Export options
+                  {exportCount !== null && showExportOptions && (
+                    <span className="ml-2 text-[12px] text-muted-foreground font-normal">
+                      {exportCount} {exportCount === 1 ? "entry" : "entries"}
+                    </span>
+                  )}
+                </span>
+                {showExportOptions ? (
+                  <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+
+              {showExportOptions && (
+                <div className="flex flex-col gap-3 p-3.5 rounded-xl border border-border bg-muted/20">
+                  {/* Tag filter */}
+                  {allTags.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
+                        Tag
+                      </label>
+                      <select
+                        value={exportTag}
+                        onChange={(e) => setExportTag(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-border bg-background text-[13px] focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/40 transition-all"
+                      >
+                        <option value="">All tags</option>
+                        {allTags.map((t) => (
+                          <option key={t} value={t}>#{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {/* Date range */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">From</label>
+                      <input
+                        type="date"
+                        value={exportFrom}
+                        onChange={(e) => setExportFrom(e.target.value)}
+                        className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/40 transition-all"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">To</label>
+                      <input
+                        type="date"
+                        value={exportTo}
+                        onChange={(e) => setExportTo(e.target.value)}
+                        className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/40 transition-all"
+                      />
+                    </div>
+                  </div>
+                  {/* Live count */}
+                  {exportCount !== null && (
+                    <p className="text-[12px] text-muted-foreground">
+                      {exportCount} {exportCount === 1 ? "entry" : "entries"} will be exported
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2.5">
                 <Button
                   variant="outline"
@@ -207,6 +367,15 @@ export function SettingsView() {
                 >
                   {exportingPDF ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                   Export PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleExportMD}
+                  disabled={exportingMD}
+                  className="gap-2 rounded-xl cursor-pointer"
+                >
+                  {exportingMD ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                  Export Markdown
                 </Button>
               </div>
             </div>

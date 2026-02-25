@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   BookOpen, Shield, Wifi, Download,
   PenLine, ScrollText, BarChart2, BookMarked, ChevronRight,
-  Flame, CalendarCheck, NotebookPen,
+  Flame, CalendarCheck, NotebookPen, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -14,7 +15,10 @@ import { getEntryCount, getAllEntries } from "@/lib/db";
 import { computeStats, type JournalStats } from "@/lib/stats";
 import { getProfile } from "@/lib/profile";
 import { getMemories } from "@/lib/autobiography";
+import { getDailyPrompt } from "@/lib/prompts";
+import { isPromptDue, markPromptShown } from "@/lib/preferences";
 import type { RememoirEntry } from "@/lib/types";
+import type { Prompt } from "@/lib/prompts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -95,6 +99,28 @@ function ReturningUserHome({
   profileName: string;
   memoryCount: number;
 }) {
+  const [showPromptCard, setShowPromptCard] = useState(false);
+  const [dailyPrompt, setDailyPrompt] = useState<Prompt | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isPromptDue()) {
+      setDailyPrompt(getDailyPrompt());
+      setShowPromptCard(true);
+    }
+  }, []);
+
+  const handlePromptWrite = () => {
+    markPromptShown();
+    setShowPromptCard(false);
+    router.push(`/entry?prompt=${encodeURIComponent(dailyPrompt!.text)}`);
+  };
+
+  const handlePromptDismiss = () => {
+    markPromptShown();
+    setShowPromptCard(false);
+  };
+
   const todayLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -154,6 +180,33 @@ function ReturningUserHome({
                 highlighted={false}
               />
             )}
+          </div>
+        )}
+
+        {/* Daily prompt card */}
+        {showPromptCard && dailyPrompt && (
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-primary uppercase tracking-widest flex items-center gap-1.5">
+                <span aria-hidden>✦</span> Today&rsquo;s prompt
+              </span>
+              <button
+                onClick={handlePromptDismiss}
+                aria-label="Dismiss prompt"
+                className="text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="text-[15px] font-medium text-foreground/90 leading-relaxed">
+              &ldquo;{dailyPrompt.text}&rdquo;
+            </p>
+            <button
+              onClick={handlePromptWrite}
+              className="self-start text-[13px] font-semibold text-primary hover:text-primary/80 transition-colors cursor-pointer"
+            >
+              Write about it →
+            </button>
           </div>
         )}
 

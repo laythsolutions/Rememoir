@@ -4,7 +4,7 @@ import { useCallback, useEffect } from "react";
 import { getEntries } from "@/lib/db";
 import { useEntryStore, PAGE_SIZE } from "@/store/entryStore";
 
-export function useEntries(tagFilter?: string) {
+export function useEntries(tagFilter?: string, from?: string, to?: string) {
   const {
     entries,
     hasMore,
@@ -24,6 +24,8 @@ export function useEntries(tagFilter?: string) {
       const results = await getEntries({
         limit: PAGE_SIZE,
         tag: tagFilter,
+        from,
+        to,
       });
       setEntries(results);
       setHasMore(results.length === PAGE_SIZE);
@@ -31,7 +33,7 @@ export function useEntries(tagFilter?: string) {
     } finally {
       setLoading(false);
     }
-  }, [tagFilter, setEntries, setHasMore, setLoading, setCursor]);
+  }, [tagFilter, from, to, setEntries, setHasMore, setLoading, setCursor]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || isLoading) return;
@@ -41,6 +43,8 @@ export function useEntries(tagFilter?: string) {
         limit: PAGE_SIZE,
         before: cursor,
         tag: tagFilter,
+        from,
+        to,
       });
       appendEntries(results);
       setHasMore(results.length === PAGE_SIZE);
@@ -48,7 +52,7 @@ export function useEntries(tagFilter?: string) {
     } finally {
       setLoading(false);
     }
-  }, [hasMore, isLoading, cursor, tagFilter, appendEntries, setHasMore, setLoading, setCursor]);
+  }, [hasMore, isLoading, cursor, tagFilter, from, to, appendEntries, setHasMore, setLoading, setCursor]);
 
   useEffect(() => {
     reset();

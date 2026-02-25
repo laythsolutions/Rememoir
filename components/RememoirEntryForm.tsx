@@ -48,7 +48,7 @@ function TranscriptCard({
 
 // ─── Main form ────────────────────────────────────────────────────────────────
 
-export function RememoirEntryForm() {
+export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string }) {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
@@ -58,7 +58,12 @@ export function RememoirEntryForm() {
   const [error, setError] = useState<string | null>(null);
 
   const { addEntryToFeed } = useEntryStore();
-  const prompt = getDailyPrompt();
+
+  // Use initialPrompt from URL if provided, otherwise fall back to daily prompt
+  const dailyPrompt = getDailyPrompt();
+  const prompt = initialPrompt
+    ? { id: dailyPrompt.id, text: initialPrompt, category: dailyPrompt.category }
+    : dailyPrompt;
 
   const {
     audioState,

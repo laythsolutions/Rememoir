@@ -56,11 +56,22 @@ export async function getEntries(opts: {
   limit: number;
   before?: string;
   tag?: string;
+  from?: string;
+  to?: string;
 }): Promise<RememoirEntry[]> {
   let results = await db.entries.filter((e) => !e.deleted).toArray();
 
   if (opts.tag !== undefined) {
     results = results.filter((e) => e.tags?.includes(opts.tag!));
+  }
+
+  if (opts.from) {
+    results = results.filter((e) => e.createdAt >= opts.from!);
+  }
+
+  if (opts.to) {
+    const toEnd = opts.to + "T23:59:59.999Z";
+    results = results.filter((e) => e.createdAt <= toEnd);
   }
 
   // Sort newest first

@@ -3,12 +3,27 @@
 import type { RememoirEntry } from "./types";
 import { formatDate, formatTime } from "./utils";
 
-/** Export all entries as a JSON file download */
-export function exportJSON(entries: RememoirEntry[]): void {
+export interface ExportOpts {
+  tag?: string;
+  from?: string;
+  to?: string;
+}
+
+function matchesOpts(entry: RememoirEntry, opts?: ExportOpts): boolean {
+  if (!opts) return true;
+  if (opts.tag && !entry.tags?.includes(opts.tag)) return false;
+  if (opts.from && entry.createdAt < opts.from) return false;
+  if (opts.to && entry.createdAt > opts.to + "T23:59:59.999Z") return false;
+  return true;
+}
+
+/** Export entries as a JSON file download */
+export function exportJSON(entries: RememoirEntry[], opts?: ExportOpts): void {
+  const filtered = entries.filter((e) => matchesOpts(e, opts));
   const data = {
     exported_at: new Date().toISOString(),
     version: 1,
-    entries: entries.map((e) => ({
+    entries: filtered.map((e) => ({
       ...e,
       // Omit OPFS paths — media files are not portable in JSON export
       audio: e.audio ? { mimeType: e.audio.mimeType, duration: e.audio.duration } : undefined,
@@ -20,8 +35,10 @@ export function exportJSON(entries: RememoirEntry[]): void {
   triggerDownload(blob, `rememoir-export-${formatFilename()}.json`);
 }
 
-/** Export all entries as a PDF (lazy-loads jspdf) */
-export async function exportPDF(entries: RememoirEntry[]): Promise<void> {
+/** Export entries as a PDF (lazy-loads jspdf) */
+export async function exportPDF(entries: RememoirEntry[], opts?: ExportOpts): Promise<void> {
+  const filtered = entries.filter((e) => matchesOpts(e, opts));
+
   // Dynamic import keeps jspdf out of the initial bundle
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -41,9 +58,9 @@ export async function exportPDF(entries: RememoirEntry[]): Promise<void> {
   doc.setTextColor(100, 100, 100);
   doc.text("My memories, my thoughts, my reflections, Me.", margin, 52);
   doc.text(`Exported: ${new Date().toLocaleDateString()}`, margin, 60);
-  doc.text(`Total entries: ${entries.length}`, margin, 68);
+  doc.text(`Total entries: ${filtered.length}`, margin, 68);
 
-  if (entries.length === 0) {
+  if (filtered.length === 0) {
     doc.save(`rememoir-export-${formatFilename()}.pdf`);
     return;
   }
@@ -69,7 +86,7 @@ export async function exportPDF(entries: RememoirEntry[]): Promise<void> {
     y += lines.length * lineHeight + 2;
   };
 
-  entries.forEach((entry, i) => {
+  filtered.forEach((entry, i) => {
     if (i > 0) {
       y += 6;
       if (y > doc.internal.pageSize.getHeight() - margin - 30) {
@@ -103,6 +120,34 @@ export async function exportPDF(entries: RememoirEntry[]): Promise<void> {
   });
 
   doc.save(`rememoir-export-${formatFilename()}.pdf`);
+}
+
+/** Export entries as a Markdown file download */
+export function exportMarkdown(entries: RememoirEntry[], opts?: ExportOpts): void {
+  const filtered = entries.filter((e) => matchesOpts(e, opts));
+  const lines: string[] = [];
+
+  filtered.forEach((entry) => {
+    lines.push(`## ${formatDate(entry.createdAt)} at ${formatTime(entry.createdAt)}`);
+    lines.push("");
+    if (entry.text) {
+      lines.push(entry.text);
+    }
+    if (entry.tags && entry.tags.length > 0) {
+      lines.push("");
+      lines.push(`Tags: ${entry.tags.map((t) => `#${t}`).join(" ")}`);
+    }
+    if (entry.audio) lines.push("");
+    if (entry.audio) lines.push("_Audio recording attached_");
+    if (entry.video) lines.push("");
+    if (entry.video) lines.push("_Video recording attached_");
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+  });
+
+  const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+  triggerDownload(blob, `rememoir-export-${formatFilename()}.md`);
 }
 
 function formatFilename(): string {

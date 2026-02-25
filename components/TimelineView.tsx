@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Search, X, Loader2, List, CalendarDays } from "lucide-react";
+import { ArrowLeft, Plus, Search, X, Loader2, List, CalendarDays, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RememoirTimelineEntry } from "@/components/RememoirTimelineEntry";
 import { CalendarView } from "@/components/CalendarView";
@@ -15,9 +15,12 @@ export function TimelineView() {
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
   const [tagFilter, setTagFilter] = useState<string | undefined>(undefined);
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [from, setFrom] = useState<string | undefined>(undefined);
+  const [to, setTo] = useState<string | undefined>(undefined);
 
-  const { entries, hasMore, isLoading, loadMore } = useEntries(tagFilter);
-  const { query, results, isSearching, search, clear } = useSearch(entries);
+  const { entries, hasMore, isLoading, loadMore } = useEntries(tagFilter, from, to);
+  const { query, results, isSearching, search, clear } = useSearch();
 
   const loaderRef = useRef<HTMLDivElement | null>(null);
 
@@ -47,8 +50,24 @@ export function TimelineView() {
     setTagFilter(tag);
   };
 
-  const displayEntries = query ? results : entries;
-  const isFiltered = tagFilter !== undefined;
+  const handleClearFilters = () => {
+    setFrom(undefined);
+    setTo(undefined);
+    setShowFilters(false);
+  };
+
+  // When both search and date filters are active, apply date filter to search results too
+  const filteredResults = query
+    ? results.filter((e) => {
+        if (from && e.createdAt < from) return false;
+        if (to && e.createdAt > to + "T23:59:59.999Z") return false;
+        return true;
+      })
+    : results;
+
+  const displayEntries = query ? filteredResults : entries;
+  const isFiltered = tagFilter !== undefined || from !== undefined || to !== undefined;
+  const hasDateFilter = from !== undefined || to !== undefined;
 
   return (
     <main className="min-h-screen bg-background">
@@ -94,26 +113,72 @@ export function TimelineView() {
           {/* List view */}
           {viewMode === "list" && (
             <div className="flex flex-col gap-4">
-              {/* Search */}
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
-                <input
-                  type="search"
-                  placeholder="Search entries and tags…"
-                  value={query}
-                  onChange={(e) => search(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-border bg-card shadow-sm text-[14px] placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/40 transition-all duration-200"
-                />
-                {query && (
-                  <button
-                    onClick={clear}
-                    aria-label="Clear search"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
+              {/* Search + filter toggle */}
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
+                  <input
+                    type="search"
+                    placeholder="Search entries and tags…"
+                    value={query}
+                    onChange={(e) => search(e.target.value)}
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-border bg-card shadow-sm text-[14px] placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/40 transition-all duration-200"
+                  />
+                  {query && (
+                    <button
+                      onClick={clear}
+                      aria-label="Clear search"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => setShowFilters((v) => !v)}
+                  aria-label="Toggle date filters"
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[13px] font-medium transition-all duration-150 cursor-pointer shrink-0 ${
+                    showFilters || hasDateFilter
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Filter className="w-3.5 h-3.5" />
+                  Filter
+                </button>
               </div>
+
+              {/* Date range inputs */}
+              {showFilters && (
+                <div className="flex flex-wrap items-end gap-3 p-3.5 rounded-xl border border-border bg-card shadow-sm">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[130px]">
+                    <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">From</label>
+                    <input
+                      type="date"
+                      value={from ?? ""}
+                      onChange={(e) => setFrom(e.target.value || undefined)}
+                      className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/40 transition-all"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 flex-1 min-w-[130px]">
+                    <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">To</label>
+                    <input
+                      type="date"
+                      value={to ?? ""}
+                      onChange={(e) => setTo(e.target.value || undefined)}
+                      className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/40 transition-all"
+                    />
+                  </div>
+                  {hasDateFilter && (
+                    <button
+                      onClick={handleClearFilters}
+                      className="text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer pb-2"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Tag filters */}
               {allTags.length > 0 && (
@@ -147,9 +212,9 @@ export function TimelineView() {
               {/* Search results count */}
               {query && !isSearching && (
                 <p className="text-[13px] text-muted-foreground">
-                  {results.length === 0
+                  {filteredResults.length === 0
                     ? "No entries found"
-                    : `${results.length} entr${results.length === 1 ? "y" : "ies"} found`}
+                    : `${filteredResults.length} entr${filteredResults.length === 1 ? "y" : "ies"} found`}
                 </p>
               )}
 
@@ -186,17 +251,22 @@ export function TimelineView() {
                   </div>
                   <div>
                     <p className="text-base font-semibold">
-                      {isFiltered ? "No entries match this tag" : "Your journal is empty"}
+                      {isFiltered ? "No entries match these filters" : "Your journal is empty"}
                     </p>
                     <p className="text-sm text-muted-foreground mt-1">
                       {isFiltered
-                        ? "Try a different tag, or clear the filter."
+                        ? "Try different filters, or clear them."
                         : "Start capturing your thoughts."}
                     </p>
                   </div>
                   {isFiltered ? (
-                    <Button variant="outline" size="sm" onClick={() => handleTagFilter(undefined)} className="rounded-xl cursor-pointer">
-                      Clear filter
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { handleTagFilter(undefined); handleClearFilters(); }}
+                      className="rounded-xl cursor-pointer"
+                    >
+                      Clear filters
                     </Button>
                   ) : (
                     <Link href="/entry">
@@ -209,7 +279,11 @@ export function TimelineView() {
               {/* Entries */}
               <div className="flex flex-col gap-3">
                 {displayEntries.map((entry) => (
-                  <RememoirTimelineEntry key={entry.id} entry={entry} />
+                  <RememoirTimelineEntry
+                    key={entry.id}
+                    entry={entry}
+                    highlightQuery={query || undefined}
+                  />
                 ))}
               </div>
 
