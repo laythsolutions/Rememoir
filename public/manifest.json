@@ -1,12 +1,18 @@
 {
+  "id": "/",
   "name": "Rememoir",
   "short_name": "Rememoir",
   "description": "My memories, my thoughts, my reflections, Me.",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#6366f1",
-  "orientation": "portrait-primary",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#faf7f0",
+  "theme_color": "#8a6228",
+  "orientation": "portrait",
+  "prefer_related_applications": false,
   "categories": ["lifestyle", "health", "productivity"],
   "icons": [
     {
@@ -28,7 +34,6 @@
       "purpose": "maskable"
     }
   ],
-  "screenshots": [],
   "shortcuts": [
     {
       "name": "New Entry",

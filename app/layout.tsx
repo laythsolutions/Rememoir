@@ -18,9 +18,13 @@ const lora = Lora({
 });
 
 export const viewport: Viewport = {
-  themeColor: "#8a6028",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#8a6228" },
+    { media: "(prefers-color-scheme: dark)", color: "#1e1a15" },
+  ],
   width: "device-width",
   initialScale: 1,
+  colorScheme: "light dark",
 };
 
 export const metadata: Metadata = {
@@ -35,7 +39,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "Rememoir",
   },
   icons: {
@@ -65,12 +69,12 @@ export default function RootLayout({
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="msapplication-TileColor" content="#8a6028" />
         {/* Inline script prevents flash of wrong theme before React hydrates */}
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('rememoir_theme');if(t==='dark'||(t==null&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();` }} />
       </head>
-      <body className={`${inter.variable} ${lora.variable} font-[family-name:var(--font-inter)] antialiased min-h-screen bg-background text-foreground pb-[calc(4rem+env(safe-area-inset-bottom))]`}>
+      <body className={`${inter.variable} ${lora.variable} font-[family-name:var(--font-inter)] antialiased min-h-screen bg-background text-foreground pt-[env(safe-area-inset-top)] pb-[calc(4rem+env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]`}>
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-xl focus:bg-background focus:border focus:border-border focus:shadow-lg focus:text-sm focus:font-medium"
