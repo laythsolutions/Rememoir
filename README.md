@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Rememoir
 
-## Getting Started
+A local-first private journaling PWA. Everything stays on your device — no accounts, no sync, no telemetry.
 
-First, run the development server:
+## Features
+
+- **Journal entries** — text, with optional audio (30s) and video (60s) recording
+- **Transcription** — Web Speech API auto-transcribes recordings
+- **Tags** — chip-style tagging with full tag filter in the timeline
+- **Full-text search** — instant in-memory search via MiniSearch
+- **Timeline** — infinite scroll list or calendar view
+- **Insights** — 30-day activity chart, writing habit breakdown
+- **My Story** — Life Memories archive + freeform About Me sections
+- **Export / Import** — JSON backup and PDF export; JSON import with duplicate detection
+- **PWA** — installable, offline-capable, works without a network
+- **Dark mode** — system-aware with manual toggle, no flash on load
+- **Docker** — single-container deployment
+
+## Stack
+
+| Layer | Library |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Styling | Tailwind CSS v4 |
+| Components | shadcn/ui |
+| Storage | Dexie (IndexedDB) + OPFS (media) |
+| State | Zustand |
+| Search | MiniSearch |
+| Charts | Recharts |
+
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Production build
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+> `npm run build` uses `--webpack` because next-pwa requires Webpack (Next.js 16 defaults to Turbopack).
 
-To learn more about Next.js, take a look at the following resources:
+### Docker
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+docker build -t rememoir .
+docker run -p 3000:3000 rememoir
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Privacy
 
-## Deploy on Vercel
+All data is stored locally in your browser's IndexedDB and OPFS. No data ever leaves your device. There is no backend, no analytics, and no telemetry of any kind.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
