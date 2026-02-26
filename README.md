@@ -12,6 +12,7 @@ A local-first private journaling PWA. Everything lives on your device — no acc
 - **Star / bookmark** — star important entries; filter to starred-only in the timeline
 - **Full-text search** — instant in-memory search via MiniSearch (searches text and tags)
 - **Writing templates** — pre-built structures (Gratitude, Reflection, Weekly Review, etc.) to start faster
+- **Share entry** — share any entry as plain text via the native Share sheet (or copy to clipboard on desktop)
 
 ### Timeline & navigation
 - **Infinite scroll timeline** — entries grouped by month with sticky month dividers
@@ -66,9 +67,11 @@ Bring your own Anthropic API key — AI features run via your key, keeping data 
 
 Duplicate detection on import (by timestamp). Day One tags are normalised to lowercase-hyphenated.
 
+Rememoir JSON exports are **self-contained** — photos, audio, and video are embedded as base64 so a single file fully restores your journal on any device. Import also restores starred status and AI insights.
+
 ### Auto-backup
 - Pick any local folder via File System Access API
-- A dated JSON snapshot is written automatically after every new entry
+- A dated JSON snapshot is written automatically after every new entry; snapshots include all embedded media
 - **Free cross-device sync tip:** pick a folder inside iCloud Drive, Google Drive, or Dropbox
 
 ### Notifications & reminders
@@ -134,6 +137,8 @@ docker run -p 3000:3000 rememoir
 npx vitest run
 ```
 
+48 tests across 3 suites: `encryption`, `prompts`, `stats`.
+
 ---
 
 ## AI setup (optional)
@@ -150,11 +155,14 @@ Models used:
 
 ## Encryption setup (optional)
 
-1. Open **Settings → Security → Enable encryption**
-2. Set a passphrase — used to derive an AES-GCM key via PBKDF2
-3. All new entries are encrypted at rest; existing entries are re-encrypted on save
+1. Open **Settings → Encryption → Enable encryption**
+2. Choose a passphrase — used to derive an AES-GCM key via PBKDF2 (100 k iterations)
+3. Optionally add a **passphrase hint** — stored locally, shown on the lock screen to jog your memory (never the passphrase itself)
+4. Confirm the passphrase; all new entries are encrypted at rest
 
-> **Important:** if you forget your passphrase, your encrypted entries cannot be recovered. Export a plaintext backup before enabling.
+To disable, open the same section and enter your current passphrase to decrypt and remove the lock.
+
+> **Important:** if you forget your passphrase there is no recovery path. Export a plaintext backup before enabling.
 
 ---
 

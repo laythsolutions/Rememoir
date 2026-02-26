@@ -5,6 +5,9 @@ import {
   deriveKey,
   encryptText,
   decryptText,
+  enableEncryption,
+  disableEncryption,
+  getEncryptionHint,
 } from "../encryption";
 
 describe("isEncryptedText", () => {
@@ -89,5 +92,42 @@ describe("encryptText / decryptText", () => {
     const key = await deriveKey("pass", salt);
     const result = await decryptText("plain text", key);
     expect(result).toBe("plain text");
+  });
+});
+
+describe("passphrase hint", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("getEncryptionHint returns null when nothing stored", () => {
+    expect(getEncryptionHint()).toBeNull();
+  });
+
+  it("enableEncryption stores the hint when provided", async () => {
+    await enableEncryption("correct-horse-battery", "childhood street name");
+    expect(getEncryptionHint()).toBe("childhood street name");
+  });
+
+  it("enableEncryption with no hint stores nothing", async () => {
+    await enableEncryption("correct-horse-battery");
+    expect(getEncryptionHint()).toBeNull();
+  });
+
+  it("enableEncryption with whitespace-only hint stores nothing", async () => {
+    await enableEncryption("correct-horse-battery", "   ");
+    expect(getEncryptionHint()).toBeNull();
+  });
+
+  it("disableEncryption clears the hint", async () => {
+    await enableEncryption("correct-horse-battery", "my hint");
+    expect(getEncryptionHint()).toBe("my hint");
+    disableEncryption();
+    expect(getEncryptionHint()).toBeNull();
+  });
+
+  it("hint is trimmed before storing", async () => {
+    await enableEncryption("correct-horse-battery", "  my cat's name  ");
+    expect(getEncryptionHint()).toBe("my cat's name");
   });
 });
