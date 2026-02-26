@@ -5,6 +5,7 @@
 const SALT_KEY = "rememoir_enc_salt";
 const SENTINEL_KEY = "rememoir_enc_sentinel";
 const ENABLED_KEY = "rememoir_enc_enabled";
+const HINT_KEY = "rememoir_enc_hint";
 const SENTINEL_VALUE = "rememoir-ok";
 
 // ─── Session key (module singleton) ──────────────────────────────────────────
@@ -103,8 +104,8 @@ async function getSalt(): Promise<Uint8Array | null> {
 
 // ─── High-level API ───────────────────────────────────────────────────────────
 
-/** Enable encryption: generate salt, derive key, store sentinel, mark enabled */
-export async function enableEncryption(passphrase: string): Promise<void> {
+/** Enable encryption: generate salt, derive key, store sentinel, mark enabled. Optionally store a passphrase hint. */
+export async function enableEncryption(passphrase: string, hint?: string): Promise<void> {
   const salt = generateSalt();
   const saltB64 = btoa(String.fromCharCode(...salt));
   const key = await deriveKey(passphrase, salt);
@@ -112,6 +113,11 @@ export async function enableEncryption(passphrase: string): Promise<void> {
   localStorage.setItem(SALT_KEY, saltB64);
   localStorage.setItem(SENTINEL_KEY, sentinel);
   localStorage.setItem(ENABLED_KEY, "true");
+  if (hint?.trim()) {
+    localStorage.setItem(HINT_KEY, hint.trim());
+  } else {
+    localStorage.removeItem(HINT_KEY);
+  }
   setSessionKey(key);
 }
 
@@ -120,7 +126,14 @@ export function disableEncryption(): void {
   localStorage.removeItem(SALT_KEY);
   localStorage.removeItem(SENTINEL_KEY);
   localStorage.removeItem(ENABLED_KEY);
+  localStorage.removeItem(HINT_KEY);
   clearSessionKey();
+}
+
+/** Returns the stored passphrase hint, or null if none set. */
+export function getEncryptionHint(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(HINT_KEY);
 }
 
 /** Derive key from passphrase, verify against sentinel. Returns derived key if ok, null if wrong. */

@@ -2,6 +2,7 @@
 
 import type { RememoirEntry } from "./types";
 import { formatDate, formatTime } from "./utils";
+import { readMediaAsBase64 } from "./opfs";
 
 export interface ExportOpts {
   tag?: string;
@@ -17,20 +18,59 @@ function matchesOpts(entry: RememoirEntry, opts?: ExportOpts): boolean {
   return true;
 }
 
-/** Export entries as a JSON file download */
-export function exportJSON(entries: RememoirEntry[], opts?: ExportOpts): void {
+/** Export entries as a JSON file download (includes media as base64 when OPFS is accessible) */
+export async function exportJSON(entries: RememoirEntry[], opts?: ExportOpts): Promise<void> {
   const filtered = entries.filter((e) => matchesOpts(e, opts));
+
+  const serialised = await Promise.all(
+    filtered.map(async (e) => {
+      // Attempt to read each media file as base64; fall back to metadata-only on failure
+      let imageData: Array<{ mimeType: string; size: number; base64: string }> | undefined;
+      if (e.images?.length) {
+        imageData = (
+          await Promise.all(
+            e.images.map(async (img) => {
+              try {
+                const base64 = await readMediaAsBase64(img.path);
+                return { mimeType: img.mimeType, size: img.size, base64 };
+              } catch {
+                return null;
+              }
+            })
+          )
+        ).filter(Boolean) as Array<{ mimeType: string; size: number; base64: string }>;
+      }
+
+      let audioData: { mimeType: string; duration: number; size: number; base64: string } | undefined;
+      if (e.audio) {
+        try {
+          const base64 = await readMediaAsBase64(e.audio.path);
+          audioData = { mimeType: e.audio.mimeType, duration: e.audio.duration, size: e.audio.size, base64 };
+        } catch { /* omit */ }
+      }
+
+      let videoData: { mimeType: string; duration: number; size: number; base64: string } | undefined;
+      if (e.video) {
+        try {
+          const base64 = await readMediaAsBase64(e.video.path);
+          videoData = { mimeType: e.video.mimeType, duration: e.video.duration, size: e.video.size, base64 };
+        } catch { /* omit */ }
+      }
+
+      return {
+        ...e,
+        // Replace OPFS path refs with self-contained base64 payloads
+        audio: audioData,
+        video: videoData,
+        images: imageData,
+      };
+    })
+  );
+
   const data = {
     exported_at: new Date().toISOString(),
-    version: 1,
-    note: "Media files (audio, video, images) are stored locally and not included in this export.",
-    entries: filtered.map((e) => ({
-      ...e,
-      // Omit OPFS paths — media files are not portable in JSON export
-      audio: e.audio ? { mimeType: e.audio.mimeType, duration: e.audio.duration } : undefined,
-      video: e.video ? { mimeType: e.video.mimeType, duration: e.video.duration } : undefined,
-      images: e.images ? e.images.map((img) => ({ mimeType: img.mimeType, size: img.size })) : undefined,
-    })),
+    version: 2,
+    entries: serialised,
   };
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });

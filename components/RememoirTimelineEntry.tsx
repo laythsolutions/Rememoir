@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Trash2, ChevronDown, ChevronUp, Mic, Video, Pencil, Check, X, Loader2, ImageIcon, ImagePlus, Star } from "lucide-react";
+import { Trash2, ChevronDown, ChevronUp, Mic, Video, Pencil, Check, X, Loader2, ImageIcon, ImagePlus, Star, Share2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +43,7 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isStarred, setIsStarred] = useState(!!entry.starred);
   const [showSentimentPicker, setShowSentimentPicker] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(entry.text);
@@ -148,6 +149,27 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
     await toggleStarEntry(entry.id, isStarred);
     setIsStarred((v) => !v);
     updateEntryInStore(entry.id, { starred: !isStarred });
+  };
+
+  const handleShare = async () => {
+    const date = new Date(entry.createdAt).toLocaleDateString("en-US", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+    });
+    const tagLine = entry.tags?.length ? `\n${entry.tags.map((t) => `#${t}`).join(" ")}` : "";
+    const shareText = `${date}\n\n${entry.text}${tagLine}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ text: shareText });
+        return;
+      } catch { /* fall through to clipboard */ }
+    }
+    // Fallback: copy to clipboard
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
   };
 
   const handleSaveEdit = async () => {
@@ -383,6 +405,17 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
               }`}
             >
               <Star className={`w-3.5 h-3.5 ${isStarred ? "fill-current" : ""}`} />
+            </button>
+            <button
+              onClick={handleShare}
+              aria-label={copied ? "Copied!" : "Share or copy entry"}
+              className={`p-1.5 rounded-lg transition-all duration-150 cursor-pointer ${
+                copied
+                  ? "text-green-600 dark:text-green-400"
+                  : "text-muted-foreground/60 hover:text-foreground hover:bg-muted"
+              }`}
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
             </button>
             <button
               onClick={enterEditMode}

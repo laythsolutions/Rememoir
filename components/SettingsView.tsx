@@ -12,6 +12,7 @@ import { ExportSection } from "@/components/settings/ExportSection";
 import { ImportSection } from "@/components/settings/ImportSection";
 import { AISection } from "@/components/settings/AISection";
 import { PinSection } from "@/components/settings/PinSection";
+import { EncryptionSection } from "@/components/settings/EncryptionSection";
 import { RemindersSection } from "@/components/settings/RemindersSection";
 import { BackupSection } from "@/components/settings/BackupSection";
 import { SettingsSection } from "@/components/settings/shared";
@@ -68,6 +69,7 @@ export function SettingsView() {
           <RemindersSection />
           <BackupSection />
           <PinSection />
+          <EncryptionSection />
 
           {/* About */}
           <SettingsSection title="About">

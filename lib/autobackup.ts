@@ -1,6 +1,7 @@
 "use client";
 
 import type { RememoirEntry } from "./types";
+import { readMediaAsBase64 } from "./opfs";
 
 const BACKUP_DB_NAME = "rememoir-backup-store";
 const BACKUP_DB_VERSION = 1;
@@ -94,18 +95,40 @@ export async function performAutoBackup(entries: RememoirEntry[]): Promise<void>
     if (permission !== "granted") return;
 
     const filename = `rememoir-backup-${new Date().toISOString().slice(0, 10)}.json`;
+
+    // Serialise entries with base64 media (same format as manual JSON export)
+    const active = entries.filter((e) => !e.deleted);
+    const serialised = await Promise.all(
+      active.map(async (e) => {
+        let imageData: Array<{ mimeType: string; size: number; base64: string }> | undefined;
+        if (e.images?.length) {
+          const results = await Promise.all(
+            e.images.map(async (img) => {
+              try { return { mimeType: img.mimeType, size: img.size, base64: await readMediaAsBase64(img.path) }; }
+              catch { return null; }
+            })
+          );
+          const valid = results.filter(Boolean) as typeof imageData;
+          if (valid?.length) imageData = valid;
+        }
+        let audioData: { mimeType: string; duration: number; size: number; base64: string } | undefined;
+        if (e.audio) {
+          try { audioData = { mimeType: e.audio.mimeType, duration: e.audio.duration, size: e.audio.size, base64: await readMediaAsBase64(e.audio.path) }; }
+          catch { /* skip */ }
+        }
+        let videoData: { mimeType: string; duration: number; size: number; base64: string } | undefined;
+        if (e.video) {
+          try { videoData = { mimeType: e.video.mimeType, duration: e.video.duration, size: e.video.size, base64: await readMediaAsBase64(e.video.path) }; }
+          catch { /* skip */ }
+        }
+        return { ...e, audio: audioData, video: videoData, images: imageData };
+      })
+    );
+
     const data = {
       exported_at: new Date().toISOString(),
-      version: 1,
-      note: "Auto-backup. Media files are stored locally and not included.",
-      entries: entries
-        .filter((e) => !e.deleted)
-        .map((e) => ({
-          ...e,
-          audio: e.audio ? { mimeType: e.audio.mimeType, duration: e.audio.duration } : undefined,
-          video: e.video ? { mimeType: e.video.mimeType, duration: e.video.duration } : undefined,
-          images: e.images ? e.images.map((img) => ({ mimeType: img.mimeType, size: img.size })) : undefined,
-        })),
+      version: 2,
+      entries: serialised,
     };
 
     const fileHandle = await handle.getFileHandle(filename, { create: true });

@@ -35,6 +35,23 @@ export async function getMediaBlobUrl(path: string): Promise<string> {
   return URL.createObjectURL(file);
 }
 
+/** Read a file from OPFS and return it as a base64-encoded string */
+export async function readMediaAsBase64(path: string): Promise<string> {
+  const [, filename] = path.split("/");
+  const dir = await getMediaDir();
+  const fileHandle = await dir.getFileHandle(filename);
+  const file = await fileHandle.getFile();
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  // Process in 8 KB chunks to avoid stack overflow on large files
+  const chunkSize = 8192;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)));
+  }
+  return btoa(parts.join(""));
+}
+
 /** Delete a file from OPFS */
 export async function deleteMediaFile(path: string): Promise<void> {
   try {

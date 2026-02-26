@@ -66,7 +66,7 @@ export function ExportSection() {
 
   const handleExportJSON = async () => {
     setExportingJSON(true);
-    try { const entries = await getAllEntries(); exportJSON(entries, buildOpts()); recordExport(); }
+    try { const entries = await getAllEntries(); await exportJSON(entries, buildOpts()); recordExport(); }
     finally { setExportingJSON(false); }
   };
 
@@ -105,7 +105,7 @@ export function ExportSection() {
           Download all your entries. Your data belongs to you, always.
         </p>
         <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
-          Note: audio, video, and photo files are stored locally and are not included in exports.
+          JSON exports include photos, audio, and video as embedded data so you can fully restore them later.
         </p>
 
         {/* Options toggle */}

@@ -7,6 +7,7 @@ import {
   getSessionKey,
   setSessionKey,
   verifyPassphrase,
+  getEncryptionHint,
 } from "@/lib/encryption";
 
 function PassphraseGate({ onUnlocked }: { onUnlocked: () => void }) {
@@ -14,10 +15,12 @@ function PassphraseGate({ onUnlocked }: { onUnlocked: () => void }) {
   const [visible, setVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
+    setHint(getEncryptionHint());
   }, []);
 
   const submit = async () => {
@@ -69,6 +72,11 @@ function PassphraseGate({ onUnlocked }: { onUnlocked: () => void }) {
           </button>
         </div>
 
+        {hint && !error && (
+          <p className="text-[12px] text-muted-foreground text-center">
+            Hint: <span className="font-medium text-foreground/70">{hint}</span>
+          </p>
+        )}
         {error && (
           <p className="text-[13px] text-destructive text-center">{error}</p>
         )}

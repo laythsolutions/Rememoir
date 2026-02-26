@@ -216,7 +216,7 @@ function ReturningUserHome({
     setExportingBackup(true);
     try {
       const entries = await getAllEntries();
-      exportJSON(entries);
+      await exportJSON(entries);
       savePreferences({ lastExportDate: new Date().toISOString() });
       setShowBackupNudge(false);
     } finally {
