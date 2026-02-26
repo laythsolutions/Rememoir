@@ -1,7 +1,8 @@
 "use client";
 
 import Dexie, { type EntityTable } from "dexie";
-import type { RememoirEntry } from "./types";
+import type { RememoirEntry, AIInsight } from "./types";
+import { getSessionKey, encryptText, decryptText, isEncryptedText } from "./encryption";
 
 class RememoirDB extends Dexie {
   entries!: EntityTable<RememoirEntry, "id">;
@@ -18,11 +19,54 @@ class RememoirDB extends Dexie {
     this.version(3).stores({
       entries: "++id, createdAt, deleted, *tags",
     });
+    // Version 4 adds aiInsight field (no index change needed)
+    this.version(4).stores({
+      entries: "++id, createdAt, deleted, *tags",
+    });
+    // Version 5 adds starred field
+    this.version(5).stores({
+      entries: "++id, createdAt, deleted, *tags, starred",
+    });
   }
 }
 
 // Singleton — safe to import anywhere client-side
 export const db = new RememoirDB();
+
+// ─── Encryption helpers ───────────────────────────────────────────────────────
+
+async function encryptEntry(entry: Omit<RememoirEntry, "id"> | RememoirEntry): Promise<typeof entry> {
+  const key = getSessionKey();
+  if (!key) return entry;
+  const result = { ...entry };
+  if (typeof result.text === "string" && !isEncryptedText(result.text)) {
+    result.text = await encryptText(result.text, key);
+  }
+  if (Array.isArray(result.tags)) {
+    result.tags = await Promise.all(
+      result.tags.map((t) => (isEncryptedText(t) ? t : encryptText(t, key)))
+    );
+  }
+  return result;
+}
+
+async function decryptEntry(entry: RememoirEntry): Promise<RememoirEntry> {
+  const key = getSessionKey();
+  if (!key) return entry;
+  const result = { ...entry };
+  if (typeof result.text === "string" && isEncryptedText(result.text)) {
+    try { result.text = await decryptText(result.text, key); } catch { /* leave encrypted */ }
+  }
+  if (Array.isArray(result.tags)) {
+    result.tags = await Promise.all(
+      result.tags.map(async (t) => {
+        if (!isEncryptedText(t)) return t;
+        try { return await decryptText(t, key); } catch { return t; }
+      })
+    );
+  }
+  return result;
+}
 
 // ─── CRUD ────────────────────────────────────────────────────────────────────
 
@@ -124,6 +168,50 @@ export async function removeTagFromAllEntries(tag: string): Promise<void> {
       })
     )
   );
+}
+
+/** Toggle the starred state of an entry */
+export async function toggleStarEntry(id: number, currentStarred: boolean): Promise<void> {
+  await db.entries.update(id, { starred: !currentStarred });
+}
+
+/** Returns all starred non-deleted entries, newest first */
+export async function getStarredEntries(): Promise<RememoirEntry[]> {
+  return db.entries
+    .filter((e) => !e.deleted && !!e.starred)
+    .toArray()
+    .then((arr) =>
+      arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    );
+}
+
+/**
+ * Returns non-deleted entries written on the same month+day as today but in a prior year.
+ * Sorted oldest-year first so the card reads chronologically.
+ */
+export async function getOnThisDayEntries(): Promise<RememoirEntry[]> {
+  const now = new Date();
+  const mmdd = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const currentYear = now.getFullYear();
+
+  return db.entries
+    .filter((e) => {
+      if (e.deleted) return false;
+      const d = new Date(e.createdAt);
+      if (d.getFullYear() >= currentYear) return false;
+      const em = String(d.getMonth() + 1).padStart(2, "0");
+      const ed = String(d.getDate()).padStart(2, "0");
+      return `${em}-${ed}` === mmdd;
+    })
+    .toArray()
+    .then((arr) =>
+      arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    );
+}
+
+/** Store AI insight on an entry without touching updatedAt */
+export async function updateEntryAI(id: number, insight: AIInsight): Promise<void> {
+  await db.entries.update(id, { aiInsight: insight });
 }
 
 /** Rename a tag across every entry that has it */

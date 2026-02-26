@@ -6,12 +6,16 @@ export interface Preferences {
   promptFrequency: PromptFrequency;
   lastPromptDate: string | null; // YYYY-MM-DD
   lastExportDate: string | null; // ISO timestamp
+  weeklyGoal: number; // 0 = no goal; 3 | 5 | 7 = days per week
+  customPrompts: string[]; // user-defined prompts mixed into daily rotation
 }
 
 const DEFAULTS: Preferences = {
   promptFrequency: "daily",
   lastPromptDate: null,
   lastExportDate: null,
+  weeklyGoal: 0,
+  customPrompts: [],
 };
 
 export function getPreferences(): Preferences {

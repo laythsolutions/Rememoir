@@ -6,17 +6,21 @@ import { useRouter } from "next/navigation";
 import {
   BookOpen, Shield, Wifi, Download,
   PenLine, ScrollText, BarChart2, BookMarked, ChevronRight,
-  Flame, CalendarCheck, X,
+  Flame, CalendarCheck, X, HardDriveDownload, History, Target,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { OnboardingModal } from "@/components/OnboardingModal";
-import { getEntryCount, getAllEntries } from "@/lib/db";
-import { computeStats, type JournalStats } from "@/lib/stats";
+import { getEntryCount, getAllEntries, getOnThisDayEntries } from "@/lib/db";
+import { exportJSON } from "@/lib/export";
+import { computeStats, computeWeeklyDigest, type JournalStats, type WeeklyDigest } from "@/lib/stats";
 import { getProfile } from "@/lib/profile";
 import { getMemories } from "@/lib/autobiography";
 import { getDailyPrompt } from "@/lib/prompts";
-import { isPromptDue, markPromptShown, getPreferences } from "@/lib/preferences";
+import { isPromptDue, markPromptShown, getPreferences, savePreferences } from "@/lib/preferences";
+import { maybeShowReminder } from "@/lib/reminders";
+import { detectCrisisPattern, isCrisisBannerDismissed } from "@/lib/crisis";
+import { CrisisBanner } from "@/components/CrisisBanner";
 import type { RememoirEntry } from "@/lib/types";
 import type { Prompt } from "@/lib/prompts";
 
@@ -49,6 +53,11 @@ export function HomeView() {
   const [writtenToday, setWrittenToday] = useState(false);
   const [profileName, setProfileName] = useState("");
   const [memoryCount, setMemoryCount] = useState(0);
+  const [showCrisis, setShowCrisis] = useState(false);
+  const [onThisDay, setOnThisDay] = useState<RememoirEntry[]>([]);
+  const [weeklyDigest, setWeeklyDigest] = useState<WeeklyDigest | null>(null);
+  const [weeklyGoal, setWeeklyGoal] = useState(0);
+  const [daysThisWeek, setDaysThisWeek] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -64,9 +73,25 @@ export function HomeView() {
       const all = await getAllEntries();
       setLatestEntry(all[0] ?? null);
       setStats(computeStats(all));
+      setWeeklyDigest(computeWeeklyDigest(all));
+      const { weeklyGoal: goal } = getPreferences();
+      setWeeklyGoal(goal ?? 0);
+      if (goal > 0) {
+        const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const uniqueDays = new Set(
+          all.filter((e) => new Date(e.createdAt) >= cutoff).map((e) => e.createdAt.substring(0, 10))
+        );
+        setDaysThisWeek(uniqueDays.size);
+      }
       const today = localDateKey(new Date());
-      setWrittenToday(all.some((e) => e.createdAt.startsWith(today)));
+      const written = all.some((e) => e.createdAt.startsWith(today));
+      setWrittenToday(written);
       setHomeState("returning");
+      maybeShowReminder(written);
+      getOnThisDayEntries().then(setOnThisDay);
+      if (detectCrisisPattern(all) && !isCrisisBannerDismissed()) {
+        setShowCrisis(true);
+      }
     }
     load();
   }, []);
@@ -80,6 +105,11 @@ export function HomeView() {
       writtenToday={writtenToday}
       profileName={profileName}
       memoryCount={memoryCount}
+      showCrisis={showCrisis}
+      onThisDay={onThisDay}
+      weeklyDigest={weeklyDigest}
+      weeklyGoal={weeklyGoal}
+      daysThisWeek={daysThisWeek}
     />
   );
 }
@@ -92,16 +122,30 @@ function ReturningUserHome({
   writtenToday,
   profileName,
   memoryCount,
+  showCrisis,
+  onThisDay,
+  weeklyDigest,
+  weeklyGoal,
+  daysThisWeek,
 }: {
   stats: JournalStats | null;
   latestEntry: RememoirEntry | null;
   writtenToday: boolean;
   profileName: string;
   memoryCount: number;
+  showCrisis: boolean;
+  onThisDay: RememoirEntry[];
+  weeklyDigest: WeeklyDigest | null;
+  weeklyGoal: number;
+  daysThisWeek: number;
 }) {
   const [showPromptCard, setShowPromptCard] = useState(false);
   const [dailyPrompt, setDailyPrompt] = useState<Prompt | null>(null);
+  const [showOnThisDay, setShowOnThisDay] = useState(true);
+  const [showWeeklyDigest, setShowWeeklyDigest] = useState(true);
   const [showBackupNudge, setShowBackupNudge] = useState(false);
+  const [daysSinceExport, setDaysSinceExport] = useState<number | null>(null);
+  const [exportingBackup, setExportingBackup] = useState(false);
   const [installEvent, setInstallEvent] = useState<Event & { prompt(): Promise<void> } | null>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [showIOSBanner, setShowIOSBanner] = useState(false);
@@ -109,11 +153,19 @@ function ReturningUserHome({
 
   useEffect(() => {
     if (isPromptDue()) {
-      setDailyPrompt(getDailyPrompt());
+      const { customPrompts } = getPreferences();
+      setDailyPrompt(getDailyPrompt(new Date(), customPrompts ?? []));
       setShowPromptCard(true);
     }
     const { lastExportDate } = getPreferences();
-    if (!lastExportDate) setShowBackupNudge(true);
+    if (!lastExportDate) {
+      setShowBackupNudge(true);
+      setDaysSinceExport(999);
+    } else {
+      const days = Math.floor((Date.now() - new Date(lastExportDate).getTime()) / 86_400_000);
+      setDaysSinceExport(days);
+      if (days >= 7) setShowBackupNudge(true);
+    }
 
     const dismissed = localStorage.getItem("rememoir_pwa_dismissed");
     if (dismissed) return;
@@ -160,6 +212,18 @@ function ReturningUserHome({
     setShowPromptCard(false);
   };
 
+  const handleQuickBackup = async () => {
+    setExportingBackup(true);
+    try {
+      const entries = await getAllEntries();
+      exportJSON(entries);
+      savePreferences({ lastExportDate: new Date().toISOString() });
+      setShowBackupNudge(false);
+    } finally {
+      setExportingBackup(false);
+    }
+  };
+
   const todayLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -199,17 +263,34 @@ function ReturningUserHome({
           </div>
         )}
 
-        {/* Backup nudge — shown only until first export */}
+        {/* Crisis support banner */}
+        {showCrisis && <CrisisBanner />}
+
+        {/* Backup nudge */}
         {showBackupNudge && (
-          <Link href="/settings" onClick={() => setShowBackupNudge(false)}>
-            <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-amber-500/8 border border-amber-500/20 cursor-pointer hover:bg-amber-500/12 transition-colors">
-              <span className="text-amber-600 dark:text-amber-400 text-sm shrink-0">💾</span>
-              <p className="text-[13px] text-amber-700 dark:text-amber-400 font-medium flex-1">
-                Back up your journal — export a copy to keep your memories safe.
-              </p>
-              <ChevronRight className="w-3.5 h-3.5 text-amber-600/60 dark:text-amber-400/60 shrink-0" />
-            </div>
-          </Link>
+          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-500/8 border border-amber-500/20">
+            <span className="text-amber-600 dark:text-amber-400 text-sm shrink-0">💾</span>
+            <p className="text-[13px] text-amber-700 dark:text-amber-400 font-medium flex-1 leading-snug">
+              {daysSinceExport === 999
+                ? "No backup yet — export now to keep your memories safe."
+                : `Last backup ${daysSinceExport}d ago — export a fresh copy.`}
+            </p>
+            <button
+              onClick={handleQuickBackup}
+              disabled={exportingBackup}
+              className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors cursor-pointer disabled:opacity-60 shrink-0"
+            >
+              <HardDriveDownload className="w-3.5 h-3.5" />
+              {exportingBackup ? "…" : "Export"}
+            </button>
+            <button
+              onClick={() => setShowBackupNudge(false)}
+              className="text-amber-500/60 hover:text-amber-600 transition-colors cursor-pointer shrink-0"
+              aria-label="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
 
         {/* PWA install banner — Android/Chrome */}
@@ -264,6 +345,13 @@ function ReturningUserHome({
               label={writtenToday ? "Written today" : "Not yet today"}
               highlighted={writtenToday}
             />
+            {weeklyGoal > 0 && (
+              <StatPill
+                icon={<Target className="w-3.5 h-3.5" />}
+                label={`Goal: ${Math.min(daysThisWeek, weeklyGoal)}/${weeklyGoal} days`}
+                highlighted={daysThisWeek >= weeklyGoal}
+              />
+            )}
             {stats.totalEntries > 0 && (
               <StatPill
                 icon={<BookOpen className="w-3.5 h-3.5" />}
@@ -272,6 +360,11 @@ function ReturningUserHome({
               />
             )}
           </div>
+        )}
+
+        {/* Weekly digest */}
+        {weeklyDigest && showWeeklyDigest && (
+          <WeeklyDigestCard digest={weeklyDigest} onDismiss={() => setShowWeeklyDigest(false)} />
         )}
 
         {/* Daily prompt card */}
@@ -299,6 +392,11 @@ function ReturningUserHome({
               Write about it →
             </button>
           </div>
+        )}
+
+        {/* On this day */}
+        {onThisDay.length > 0 && showOnThisDay && (
+          <OnThisDayCard entries={onThisDay} onDismiss={() => setShowOnThisDay(false)} />
         )}
 
         {/* Latest entry preview */}
@@ -381,6 +479,132 @@ function ReturningUserHome({
         </Link>
       </div>
     </main>
+  );
+}
+
+// ─── Weekly digest card ───────────────────────────────────────────────────────
+
+const SENTIMENT_EMOJI: Record<string, string> = {
+  positive: "🌱", reflective: "💭", challenging: "🌊", neutral: "📝",
+};
+
+function WeeklyDigestCard({ digest, onDismiss }: { digest: WeeklyDigest; onDismiss: () => void }) {
+  const stats: { label: string; value: string }[] = [
+    { label: "Entries", value: String(digest.entryCount) },
+    { label: "Days written", value: `${digest.daysWritten}/7` },
+    { label: "Avg words", value: String(digest.avgWords) },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-border bg-card shadow-sm p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
+          Last 7 days
+        </span>
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div className="flex gap-3">
+        {stats.map(({ label, value }) => (
+          <div key={label} className="flex-1 flex flex-col gap-0.5 rounded-xl bg-muted/50 px-3 py-2.5">
+            <span className="text-[18px] font-bold tabular-nums">{value}</span>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">{label}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-3 text-[12px] text-muted-foreground flex-wrap">
+        {digest.dominantSentiment && (
+          <span>
+            {SENTIMENT_EMOJI[digest.dominantSentiment] ?? "💭"}{" "}
+            Mostly <span className="font-medium text-foreground/80">{digest.dominantSentiment}</span>
+          </span>
+        )}
+        {digest.topTag && (
+          <span>
+            Top tag{" "}
+            <span className="font-medium text-primary">#{digest.topTag}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── On This Day card ─────────────────────────────────────────────────────────
+
+function OnThisDayCard({ entries, onDismiss }: { entries: RememoirEntry[]; onDismiss: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Get unique years represented
+  const years = [...new Set(entries.map((e) => new Date(e.createdAt).getFullYear()))].sort();
+  const yearLabel = years.length === 1
+    ? `${years[0]}`
+    : `${years[0]}–${years[years.length - 1]}`;
+
+  const today = new Date();
+  const dateLabel = today.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+
+  const shown = expanded ? entries : entries.slice(0, 2);
+
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <History className="w-3.5 h-3.5 text-primary" />
+          <span className="text-[11px] font-semibold text-primary uppercase tracking-widest">
+            On this day · {yearLabel}
+          </span>
+        </div>
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <p className="text-[12px] text-muted-foreground -mt-1">
+        {entries.length} {entries.length === 1 ? "entry" : "entries"} from {dateLabel} in past years
+      </p>
+
+      <div className="flex flex-col gap-3">
+        {shown.map((entry) => {
+          const year = new Date(entry.createdAt).getFullYear();
+          const yearsAgo = today.getFullYear() - year;
+          return (
+            <div key={entry.id} className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold text-primary/70">
+                {year} · {yearsAgo} {yearsAgo === 1 ? "year" : "years"} ago
+              </span>
+              {entry.text ? (
+                <p className="text-[13px] leading-relaxed text-foreground/80 line-clamp-2">
+                  {entry.text}
+                </p>
+              ) : (
+                <p className="text-[13px] italic text-muted-foreground">Recording only</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {entries.length > 2 && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="self-start text-[12px] font-semibold text-primary hover:text-primary/80 transition-colors cursor-pointer"
+        >
+          {expanded ? "Show less" : `Show ${entries.length - 2} more →`}
+        </button>
+      )}
+    </div>
   );
 }
 

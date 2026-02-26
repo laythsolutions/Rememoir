@@ -24,13 +24,19 @@ export const PROMPTS: Prompt[] = [
 
 /**
  * Returns a deterministic prompt for a given date.
- * Rotates daily across all prompts so the same prompt
- * appears every ~15 days.
+ * Rotates daily across all prompts (built-in + custom) so the same prompt
+ * appears every N days where N = pool size.
  */
-export function getDailyPrompt(date: Date = new Date()): Prompt {
+export function getDailyPrompt(date: Date = new Date(), customPrompts: string[] = []): Prompt {
+  const custom: Prompt[] = customPrompts.map((text, i) => ({
+    id: 1000 + i,
+    text,
+    category: "reflection",
+  }));
+  const pool = [...PROMPTS, ...custom];
   const dayOfYear = Math.floor(
     (date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) /
       (1000 * 60 * 60 * 24)
   );
-  return PROMPTS[dayOfYear % PROMPTS.length];
+  return pool[dayOfYear % pool.length];
 }

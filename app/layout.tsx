@@ -3,6 +3,8 @@ import { Inter, Lora } from "next/font/google";
 import "./globals.css";
 import { BottomNav } from "@/components/BottomNav";
 import { PinGate } from "@/components/PinLock";
+import { EncryptionGate } from "@/components/EncryptionGate";
+import { Toaster } from "sonner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -83,11 +85,14 @@ export default function RootLayout({
           Skip to content
         </a>
         <PinGate>
-          <div id="main-content">
-            {children}
-          </div>
-          <BottomNav />
+          <EncryptionGate>
+            <div id="main-content">
+              {children}
+            </div>
+            <BottomNav />
+          </EncryptionGate>
         </PinGate>
+        <Toaster position="bottom-center" richColors />
       </body>
     </html>
   );

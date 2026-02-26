@@ -39,6 +39,19 @@ export interface RememoirEntry {
   images?: ImageRef[];
   /** Whether this entry was deleted (soft delete for sync) */
   deleted?: boolean;
+  /** Whether this entry is starred/bookmarked */
+  starred?: boolean;
+  /** AI-generated insight — populated asynchronously after save */
+  aiInsight?: AIInsight;
+}
+
+export interface AIInsight {
+  sentiment: 'positive' | 'reflective' | 'challenging' | 'neutral';
+  /** 1 = mild, 5 = intense — how strongly the sentiment is expressed */
+  intensity?: 1 | 2 | 3 | 4 | 5;
+  summary: string;
+  suggestedTags: string[];
+  analyzedAt: string; // ISO
 }
 
 export interface SearchDocument {

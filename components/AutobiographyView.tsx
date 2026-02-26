@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Plus, Pencil, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, Plus, Pencil, Trash2, X, Sparkles, Loader2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
@@ -15,6 +15,9 @@ import {
   type AutobiographySections,
   type LifeMemory,
 } from "@/lib/autobiography";
+import { getAllEntries } from "@/lib/db";
+import { draftAutobiography, isAIEnabled } from "@/lib/ai";
+import { toast } from "sonner";
 
 // ─── About Me section config ──────────────────────────────────────────────────
 
@@ -116,6 +119,12 @@ function MemoriesTab() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
+  // AI draft
+  const [aiEnabled] = useState(() => isAIEnabled());
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [aiDraft, setAiDraft] = useState<string | null>(null);
+  const [draftCopied, setDraftCopied] = useState(false);
+
   useEffect(() => {
     setMemories(getMemories());
   }, []);
@@ -160,14 +169,104 @@ function MemoriesTab() {
     setForm(EMPTY_FORM);
   };
 
+  const handleDraftWithAI = async () => {
+    setIsDrafting(true);
+    try {
+      const entries = await getAllEntries();
+      const recent = entries.slice(0, 20).map((e) => ({ text: e.text, createdAt: e.createdAt }));
+      if (recent.length === 0) {
+        toast.info("Add some journal entries first to generate a draft.");
+        return;
+      }
+      const draft = await draftAutobiography(recent);
+      if (draft) {
+        setAiDraft(draft);
+      } else {
+        toast.error("Failed to generate draft — check your API key in Settings.");
+      }
+    } catch {
+      toast.error("Failed to generate draft — check your API key in Settings.");
+    } finally {
+      setIsDrafting(false);
+    }
+  };
+
+  const handleCopyDraft = () => {
+    if (!aiDraft) return;
+    navigator.clipboard.writeText(aiDraft).then(() => {
+      setDraftCopied(true);
+      toast.success("Copied to clipboard.");
+      setTimeout(() => setDraftCopied(false), 2000);
+    });
+  };
+
+  const handleAddDraftAsMemory = () => {
+    if (!aiDraft) return;
+    const m = addMemory({ era: "", title: "AI Draft", content: aiDraft });
+    setMemories((prev) => [m, ...prev]);
+    setAiDraft(null);
+    toast.success("Added to Life Memories.");
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      {/* Add button */}
+      {/* AI draft modal */}
+      {aiDraft && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setAiDraft(null); }}
+        >
+          <div className="bg-card rounded-2xl border border-border shadow-xl max-w-lg w-full p-5 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Sparkles className="w-4 h-4 text-primary" />
+                AI Draft
+              </div>
+              <button
+                onClick={() => setAiDraft(null)}
+                className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-[14px] leading-relaxed text-foreground/85 whitespace-pre-wrap">{aiDraft}</p>
+            <div className="flex gap-2 flex-wrap">
+              <Button size="sm" onClick={handleAddDraftAsMemory} className="gap-1.5 rounded-xl cursor-pointer">
+                <Plus className="w-3.5 h-3.5" />
+                Add to memories
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleCopyDraft} className="gap-1.5 rounded-xl cursor-pointer">
+                {draftCopied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setAiDraft(null)} className="ml-auto rounded-xl cursor-pointer text-muted-foreground">
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add button row */}
       {!showForm && (
-        <Button onClick={handleAdd} className="gap-2 self-start rounded-xl shadow-sm shadow-primary/15 cursor-pointer">
-          <Plus className="w-4 h-4" />
-          Add a memory
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button onClick={handleAdd} className="gap-2 self-start rounded-xl shadow-sm shadow-primary/15 cursor-pointer">
+            <Plus className="w-4 h-4" />
+            Add a memory
+          </Button>
+          {aiEnabled && (
+            <Button
+              variant="outline"
+              onClick={handleDraftWithAI}
+              disabled={isDrafting}
+              className="gap-2 self-start rounded-xl cursor-pointer"
+            >
+              {isDrafting
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Drafting…</>
+                : <><Sparkles className="w-4 h-4" /> Draft with AI</>}
+            </Button>
+          )}
+        </div>
       )}
 
       {/* Memory form */}

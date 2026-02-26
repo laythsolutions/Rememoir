@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Search, X, Loader2, List, CalendarDays, Filter } from "lucide-react";
+import { ArrowLeft, Plus, Search, X, Loader2, List, CalendarDays, Filter, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RememoirTimelineEntry } from "@/components/RememoirTimelineEntry";
 import { CalendarView } from "@/components/CalendarView";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useEntries } from "@/hooks/useEntries";
 import { useSearch } from "@/hooks/useSearch";
-import { getAllTags } from "@/lib/db";
+import { getAllTags, getStarredEntries } from "@/lib/db";
 import { monthKey, formatMonthYear } from "@/lib/utils";
 import type { RememoirEntry } from "@/lib/types";
 
@@ -31,6 +31,8 @@ export function TimelineView() {
   const [showFilters, setShowFilters] = useState(false);
   const [from, setFrom] = useState<string | undefined>(undefined);
   const [to, setTo] = useState<string | undefined>(undefined);
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [starredEntries, setStarredEntries] = useState<RememoirEntry[]>([]);
 
   const { entries, hasMore, isLoading, loadMore } = useEntries(tagFilter, from, to);
   const { query, results, isSearching, search, clear } = useSearch();
@@ -61,12 +63,24 @@ export function TimelineView() {
   const handleTagFilter = (tag: string | undefined) => {
     clear();
     setTagFilter(tag);
+    setStarredOnly(false);
+  };
+
+  const handleStarredFilter = () => {
+    clear();
+    setTagFilter(undefined);
+    setStarredOnly((v) => {
+      const next = !v;
+      if (next) getStarredEntries().then(setStarredEntries);
+      return next;
+    });
   };
 
   const handleClearFilters = () => {
     setFrom(undefined);
     setTo(undefined);
     setShowFilters(false);
+    setStarredOnly(false);
   };
 
   // When both search and date filters are active, apply date filter to search results too
@@ -78,8 +92,8 @@ export function TimelineView() {
       })
     : results;
 
-  const displayEntries = query ? filteredResults : entries;
-  const isFiltered = tagFilter !== undefined || from !== undefined || to !== undefined;
+  const displayEntries = query ? filteredResults : starredOnly ? starredEntries : entries;
+  const isFiltered = tagFilter !== undefined || from !== undefined || to !== undefined || starredOnly;
   const hasDateFilter = from !== undefined || to !== undefined;
 
   // Group display entries by month
@@ -209,34 +223,43 @@ export function TimelineView() {
                 </div>
               )}
 
-              {/* Tag filters */}
-              {allTags.length > 0 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+              {/* Tag filters + Starred */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+                <button
+                  onClick={() => { handleTagFilter(undefined); setStarredOnly(false); }}
+                  className={`shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold transition-all duration-150 cursor-pointer ${
+                    !tagFilter && !starredOnly
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-muted/80 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={handleStarredFilter}
+                  className={`shrink-0 flex items-center gap-1 px-3 py-1 rounded-full text-[12px] font-semibold transition-all duration-150 cursor-pointer ${
+                    starredOnly
+                      ? "bg-amber-500 text-white shadow-sm"
+                      : "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+                  }`}
+                >
+                  <Star className={`w-3 h-3 ${starredOnly ? "fill-current" : ""}`} />
+                  Starred
+                </button>
+                {allTags.map((tag) => (
                   <button
-                    onClick={() => handleTagFilter(undefined)}
+                    key={tag}
+                    onClick={() => handleTagFilter(tagFilter === tag ? undefined : tag)}
                     className={`shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold transition-all duration-150 cursor-pointer ${
-                      !tagFilter
+                      tagFilter === tag
                         ? "bg-primary text-primary-foreground shadow-sm"
-                        : "bg-muted/80 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        : "bg-primary/8 text-primary hover:bg-primary/15"
                     }`}
                   >
-                    All
+                    #{tag}
                   </button>
-                  {allTags.map((tag) => (
-                    <button
-                      key={tag}
-                      onClick={() => handleTagFilter(tagFilter === tag ? undefined : tag)}
-                      className={`shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold transition-all duration-150 cursor-pointer ${
-                        tagFilter === tag
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "bg-primary/8 text-primary hover:bg-primary/15"
-                      }`}
-                    >
-                      #{tag}
-                    </button>
-                  ))}
-                </div>
-              )}
+                ))}
+              </div>
 
               {/* Search results count */}
               {query && !isSearching && (
@@ -277,14 +300,22 @@ export function TimelineView() {
               {!isLoading && displayEntries.length === 0 && !query && (
                 <div className="flex flex-col items-center gap-4 py-20 text-center">
                   <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
-                    <span className="text-3xl text-muted-foreground/30 font-serif select-none">✦</span>
+                    <span className="text-3xl text-muted-foreground/30 font-serif select-none">
+                      {starredOnly ? "⭐" : "✦"}
+                    </span>
                   </div>
                   <div>
                     <p className="text-base font-semibold">
-                      {isFiltered ? "No entries match these filters" : "Every story starts here."}
+                      {starredOnly
+                        ? "No starred entries yet"
+                        : isFiltered
+                        ? "No entries match these filters"
+                        : "Every story starts here."}
                     </p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      {isFiltered
+                      {starredOnly
+                        ? "Tap the ☆ on any entry to star it."
+                        : isFiltered
                         ? "Try different filters, or clear them."
                         : "Write your first entry and begin the record."}
                     </p>
@@ -331,12 +362,14 @@ export function TimelineView() {
               )}
 
               {/* Infinite scroll sentinel */}
-              <div ref={loaderRef} className="py-4 flex justify-center">
-                {isLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
-                {!isLoading && !hasMore && entries.length > 0 && !query && (
-                  <p className="text-[12px] text-muted-foreground/50 font-serif italic">— You&apos;ve reached the beginning —</p>
-                )}
-              </div>
+              {!starredOnly && (
+                <div ref={loaderRef} className="py-4 flex justify-center">
+                  {isLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+                  {!isLoading && !hasMore && entries.length > 0 && !query && (
+                    <p className="text-[12px] text-muted-foreground/50 font-serif italic">— You&apos;ve reached the beginning —</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

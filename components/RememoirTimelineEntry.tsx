@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Trash2, ChevronDown, ChevronUp, Mic, Video, Pencil, Check, X, Loader2, ImageIcon, ImagePlus } from "lucide-react";
+import { Trash2, ChevronDown, ChevronUp, Mic, Video, Pencil, Check, X, Loader2, ImageIcon, ImagePlus, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/TagInput";
-import { deleteEntry, updateEntry } from "@/lib/db";
+import { deleteEntry, updateEntry, toggleStarEntry, updateEntryAI } from "@/lib/db";
 import { getMediaBlobUrl, saveMediaFile, deleteMediaFile } from "@/lib/opfs";
 import { compressImage } from "@/lib/imageUtils";
 import { formatDayOfWeek, formatDateLong, formatTime } from "@/lib/utils";
@@ -41,6 +41,8 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [isStarred, setIsStarred] = useState(!!entry.starred);
+  const [showSentimentPicker, setShowSentimentPicker] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(entry.text);
@@ -133,6 +135,21 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
     }
   };
 
+  const handleOverrideSentiment = async (sentiment: "positive" | "reflective" | "neutral" | "challenging") => {
+    if (!entry.id || !entry.aiInsight) return;
+    setShowSentimentPicker(false);
+    const updated = { ...entry.aiInsight, sentiment };
+    await updateEntryAI(entry.id, updated);
+    updateEntryInStore(entry.id, { aiInsight: updated });
+  };
+
+  const handleToggleStar = async () => {
+    if (!entry.id) return;
+    await toggleStarEntry(entry.id, isStarred);
+    setIsStarred((v) => !v);
+    updateEntryInStore(entry.id, { starred: !isStarred });
+  };
+
   const handleSaveEdit = async () => {
     if (!entry.id) return;
     setIsSaving(true);
@@ -176,9 +193,13 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
     setIsEditing(false);
   };
 
-  const previewText = isLong && !expanded
-    ? entry.text.slice(0, 220).trim() + "…"
-    : entry.text;
+  // If entry has an AI summary and is not expanded, show it instead of raw truncation
+  const previewText =
+    !expanded && !highlightQuery && entry.aiInsight?.summary
+      ? null // will render AI summary inline
+      : isLong && !expanded
+      ? entry.text.slice(0, 220).trim() + "…"
+      : entry.text;
 
   const staggerDelay = Math.min(index * 40, 200);
 
@@ -286,6 +307,54 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
           </div>
 
           <div className="flex items-center gap-0.5 -mr-1 shrink-0">
+            {entry.aiInsight && (() => {
+              const intensity = entry.aiInsight.intensity ?? 3;
+              const isHigh = intensity >= 4;
+              const s = entry.aiInsight.sentiment;
+              const pillClass = `text-[10px] font-semibold px-2 py-0.5 rounded-full mr-0.5 transition-all cursor-pointer select-none ${
+                s === "positive"
+                  ? isHigh ? "bg-green-500/20 text-green-700 dark:text-green-400 ring-1 ring-green-400/30" : "bg-green-500/12 text-green-700 dark:text-green-400"
+                  : s === "challenging"
+                  ? isHigh ? "bg-rose-500/20 text-rose-700 dark:text-rose-400 ring-1 ring-rose-400/30" : "bg-rose-500/12 text-rose-700 dark:text-rose-400"
+                  : s === "reflective"
+                  ? isHigh ? "bg-primary/18 text-primary ring-1 ring-primary/20" : "bg-primary/10 text-primary"
+                  : "bg-muted text-muted-foreground"
+              }`;
+              return (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSentimentPicker((v) => !v)}
+                    className={pillClass}
+                    title="Tap to correct sentiment"
+                  >
+                    {s}
+                    {isHigh && <span className="ml-0.5 opacity-60">{"●".repeat(Math.min(intensity - 3, 2))}</span>}
+                  </button>
+                  {showSentimentPicker && (
+                    <>
+                      {/* Invisible backdrop to close on outside click */}
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowSentimentPicker(false)}
+                      />
+                      <div className="absolute top-full right-0 mt-1 z-20 flex flex-col gap-0.5 p-1.5 rounded-xl border border-border bg-popover shadow-lg min-w-[110px]">
+                        {(["positive", "reflective", "neutral", "challenging"] as const).map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => handleOverrideSentiment(opt)}
+                            className={`text-[11px] font-medium px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
+                              opt === s ? "bg-primary/10 text-primary" : "hover:bg-muted text-foreground/80"
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             {entry.images && entry.images.length > 0 && (
               <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0.5 rounded-md h-auto">
                 <ImageIcon className="w-2.5 h-2.5" />
@@ -304,6 +373,17 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
                 Video
               </Badge>
             )}
+            <button
+              onClick={handleToggleStar}
+              aria-label={isStarred ? "Unstar entry" : "Star entry"}
+              className={`p-1.5 rounded-lg transition-all duration-150 cursor-pointer ${
+                isStarred
+                  ? "text-amber-500 hover:text-amber-400"
+                  : "text-muted-foreground/60 hover:text-amber-500 hover:bg-amber-500/8"
+              }`}
+            >
+              <Star className={`w-3.5 h-3.5 ${isStarred ? "fill-current" : ""}`} />
+            </button>
             <button
               onClick={enterEditMode}
               aria-label="Edit entry"
@@ -344,11 +424,21 @@ export function RememoirTimelineEntry({ entry, highlightQuery, index = 0 }: Reme
 
         {/* Text */}
         {entry.text && (
-          <p className="text-[14px] leading-[1.7] text-foreground/85 whitespace-pre-wrap">
-            {highlightQuery
-              ? highlightText(previewText, highlightQuery)
-              : <MarkdownText text={previewText} />}
-          </p>
+          <>
+            {previewText === null ? (
+              // AI summary view (collapsed, no search query)
+              <p className="text-[13px] leading-[1.65] text-muted-foreground italic">
+                <span className="text-[10px] font-semibold not-italic mr-1 opacity-60">✦</span>
+                {entry.aiInsight!.summary}
+              </p>
+            ) : (
+              <p className="text-[14px] leading-[1.7] text-foreground/85 whitespace-pre-wrap">
+                {highlightQuery
+                  ? highlightText(previewText, highlightQuery)
+                  : <MarkdownText text={previewText} />}
+              </p>
+            )}
+          </>
         )}
 
         {/* Image thumbnails */}

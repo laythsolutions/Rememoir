@@ -152,6 +152,164 @@ export function exportMarkdown(entries: RememoirEntry[], opts?: ExportOpts): voi
   triggerDownload(blob, `rememoir-export-${formatFilename()}.md`);
 }
 
+/** Export a therapy-session brief as PDF — sentiment overview, themes, notable entries */
+export async function exportTherapyBrief(entries: RememoirEntry[]): Promise<void> {
+  const active = entries.filter((e) => !e.deleted);
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+
+  const pw = doc.internal.pageSize.getWidth();
+  const ph = doc.internal.pageSize.getHeight();
+  const ml = 20, mr = 20, mt = 20;
+  const cw = pw - ml - mr;
+  let y = mt;
+
+  const INDIGO: [number, number, number] = [99, 102, 241];
+  const ROSE:   [number, number, number] = [239, 68, 68];
+  const GREEN:  [number, number, number] = [34, 197, 94];
+  const GRAY:   [number, number, number] = [107, 114, 128];
+  const DARK:   [number, number, number] = [30, 30, 30];
+
+  const addLine = (text: string, size: number, bold = false, color: [number, number, number] = DARK, extraY = 0) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    const lines = doc.splitTextToSize(text, cw) as string[];
+    const lh = size * 0.45;
+    if (y + lines.length * lh + 4 > ph - mt) { doc.addPage(); y = mt; }
+    doc.text(lines, ml, y);
+    y += lines.length * lh + 2 + extraY;
+  };
+
+  const rule = (color: [number, number, number] = [220, 220, 220]) => {
+    doc.setDrawColor(...color);
+    doc.line(ml, y, pw - mr, y);
+    y += 4;
+  };
+
+  // ── Cover ──────────────────────────────────────────────────────────────────
+  doc.setFillColor(248, 247, 244);
+  doc.rect(0, 0, pw, 60, "F");
+  addLine("Rememoir", 22, true, INDIGO);
+  addLine("Therapy Session Brief", 13, false, GRAY, 2);
+
+  const dateRange = active.length > 0
+    ? `${formatDate(active[active.length - 1].createdAt)} – ${formatDate(active[0].createdAt)}`
+    : "No date range";
+  addLine(dateRange, 10, false, GRAY, 6);
+
+  // ── 30-day snapshot ────────────────────────────────────────────────────────
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+  const recent = active.filter((e) => new Date(e.createdAt) >= cutoff);
+  const analysed = recent.filter((e) => e.aiInsight);
+
+  const counts = { positive: 0, reflective: 0, challenging: 0, neutral: 0 };
+  let totalIntensity = 0;
+  for (const e of analysed) {
+    counts[e.aiInsight!.sentiment]++;
+    totalIntensity += e.aiInsight!.intensity ?? 3;
+  }
+  const avgIntensity = analysed.length ? (totalIntensity / analysed.length).toFixed(1) : "—";
+
+  addLine("30-Day Snapshot", 12, true, DARK, 2);
+  rule();
+
+  const snap = [
+    ["Total entries", String(recent.length)],
+    ["AI-analysed", String(analysed.length)],
+    ["Avg intensity (1–5)", String(avgIntensity)],
+  ];
+  for (const [label, val] of snap) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(...GRAY);
+    doc.text(label, ml, y);
+    doc.setFont("helvetica", "bold"); doc.setTextColor(...DARK);
+    doc.text(val, pw - mr, y, { align: "right" });
+    y += 5.5;
+  }
+  y += 3;
+
+  // Sentiment bar chart (horizontal)
+  addLine("Emotional Tone Breakdown", 12, true, DARK, 2);
+  rule();
+
+  const sentimentColors: Record<string, [number, number, number]> = {
+    positive: GREEN, reflective: INDIGO, neutral: GRAY, challenging: ROSE,
+  };
+  const total = analysed.length || 1;
+  for (const [key, count] of Object.entries(counts)) {
+    const pct = Math.round((count / total) * 100);
+    const barW = Math.round((count / total) * (cw - 40));
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...GRAY);
+    doc.text(`${key} (${pct}%)`, ml, y);
+    y += 4;
+    doc.setFillColor(...(sentimentColors[key] ?? GRAY));
+    doc.roundedRect(ml, y - 2, Math.max(barW, 2), 4, 1, 1, "F");
+    y += 5;
+  }
+  y += 4;
+
+  // ── Recurring themes ───────────────────────────────────────────────────────
+  const tagFreq = new Map<string, number>();
+  for (const e of recent) for (const t of e.tags ?? []) tagFreq.set(t, (tagFreq.get(t) ?? 0) + 1);
+  const topTags = [...tagFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  if (topTags.length > 0) {
+    addLine("Recurring Themes", 12, true, DARK, 2);
+    rule();
+    addLine(topTags.map(([t, n]) => `#${t} (${n}×)`).join("   "), 10, false, INDIGO, 4);
+  }
+
+  // ── Notable entries ────────────────────────────────────────────────────────
+  const mostPositive = analysed.filter((e) => e.aiInsight!.sentiment === "positive")
+    .sort((a, b) => (b.aiInsight!.intensity ?? 3) - (a.aiInsight!.intensity ?? 3))[0];
+  const mostChallenging = analysed.filter((e) => e.aiInsight!.sentiment === "challenging")
+    .sort((a, b) => (b.aiInsight!.intensity ?? 3) - (a.aiInsight!.intensity ?? 3))[0];
+
+  if (mostPositive || mostChallenging) {
+    addLine("Notable Entries", 12, true, DARK, 2);
+    rule();
+    if (mostPositive) {
+      addLine(`Most uplifting — ${formatDate(mostPositive.createdAt)}`, 10, true, GREEN);
+      addLine(mostPositive.aiInsight!.summary, 10, false, DARK, 3);
+    }
+    if (mostChallenging) {
+      addLine(`Most challenging — ${formatDate(mostChallenging.createdAt)}`, 10, true, ROSE);
+      addLine(mostChallenging.aiInsight!.summary, 10, false, DARK, 3);
+    }
+  }
+
+  // ── Writing consistency ────────────────────────────────────────────────────
+  const daySet = new Set(recent.map((e) => e.createdAt.slice(0, 10)));
+  const wordCounts = recent.map((e) => e.text?.trim().split(/\s+/).filter(Boolean).length ?? 0);
+  const avgWords = wordCounts.length ? Math.round(wordCounts.reduce((a, b) => a + b, 0) / wordCounts.length) : 0;
+
+  addLine("Writing Consistency", 12, true, DARK, 2);
+  rule();
+  const cons = [
+    ["Days written (last 30)", `${daySet.size} / 30`],
+    ["Avg words per entry", String(avgWords)],
+    ["Total entries (all time)", String(active.length)],
+  ];
+  for (const [label, val] of cons) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(...GRAY);
+    doc.text(label, ml, y);
+    doc.setFont("helvetica", "bold"); doc.setTextColor(...DARK);
+    doc.text(val, pw - mr, y, { align: "right" });
+    y += 5.5;
+  }
+  y += 6;
+
+  // ── Footer disclaimer ──────────────────────────────────────────────────────
+  if (y > ph - 30) { doc.addPage(); y = mt; }
+  rule([200, 200, 200]);
+  addLine(
+    "Generated by Rememoir — this is not a clinical document. AI sentiment analysis is indicative only and should not be used as a diagnostic tool.",
+    8, false, GRAY
+  );
+
+  doc.save(`rememoir-therapy-brief-${formatFilename()}.pdf`);
+}
+
 function formatFilename(): string {
   return new Date().toISOString().slice(0, 10);
 }

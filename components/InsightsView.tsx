@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getAllEntries } from "@/lib/db";
-import { computeStats, type JournalStats, type DailyPoint } from "@/lib/stats";
+import { computeStats, computeSentimentStats, computePatterns, type JournalStats, type DailyPoint, type SentimentStats, type JournalPatterns } from "@/lib/stats";
 
 // ─── Stat card ───────────────────────────────────────────────────────────────
 
@@ -191,6 +191,189 @@ function LoadingState() {
   );
 }
 
+// ─── Sentiment section ────────────────────────────────────────────────────────
+
+const SENTIMENT_META = {
+  positive:    { label: "Positive",    color: "bg-green-500",  textColor: "text-green-700 dark:text-green-400" },
+  reflective:  { label: "Reflective",  color: "bg-primary",    textColor: "text-primary" },
+  challenging: { label: "Challenging", color: "bg-rose-500",   textColor: "text-rose-700 dark:text-rose-400" },
+  neutral:     { label: "Neutral",     color: "bg-muted-foreground/50", textColor: "text-muted-foreground" },
+} as const;
+
+function SentimentSection({ sentiment }: { sentiment: SentimentStats }) {
+  const { last30, weeklyScores } = sentiment;
+
+  if (last30.total === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-8">
+        <p className="text-sm text-muted-foreground text-center">
+          Enable AI features and write a few entries to see your emotional tone here.
+        </p>
+      </div>
+    );
+  }
+
+  const order = ["positive", "reflective", "neutral", "challenging"] as const;
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Breakdown bars */}
+      <div className="flex flex-col gap-2.5">
+        {order.map((key) => {
+          const count = last30[key];
+          const pct = last30.total > 0 ? Math.round((count / last30.total) * 100) : 0;
+          const meta = SENTIMENT_META[key];
+          return (
+            <div key={key} className="flex items-center gap-3">
+              <span className={`text-[12px] font-medium w-[80px] shrink-0 ${meta.textColor}`}>{meta.label}</span>
+              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${meta.color} transition-all duration-500`}
+                  style={{ width: `${pct}%`, opacity: 0.75 }}
+                />
+              </div>
+              <span className="text-[12px] text-muted-foreground tabular-nums w-8 text-right">{pct}%</span>
+            </div>
+          );
+        })}
+        <p className="text-[11px] text-muted-foreground/60 mt-1">
+          {last30.total} AI-analysed {last30.total === 1 ? "entry" : "entries"} in the last 30 days
+        </p>
+      </div>
+
+      {/* Weekly trend */}
+      {weeklyScores.some((w) => w.analysed > 0) && (
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">4-week tone</p>
+          <div className="flex gap-2 items-end h-16">
+            {weeklyScores.map((week) => {
+              // score: -1 → challenging, 0 → neutral, +1 → positive
+              const normalised = (week.score + 1) / 2; // 0…1
+              const heightPct = week.analysed === 0 ? 0 : Math.max(10, Math.round(normalised * 100));
+              const barColor =
+                week.score > 0.2 ? "bg-green-500/70"
+                : week.score < -0.2 ? "bg-rose-500/70"
+                : "bg-primary/50";
+              return (
+                <div key={week.label} className="flex-1 flex flex-col items-center gap-1.5">
+                  <div className="w-full flex items-end justify-center h-12">
+                    <div
+                      className={`w-full rounded-t-lg ${barColor} transition-all duration-500`}
+                      style={{ height: `${heightPct}%` }}
+                      title={`${week.label}: score ${week.score > 0 ? "+" : ""}${week.score}`}
+                    />
+                  </div>
+                  <span className="text-[9px] text-muted-foreground/60 text-center leading-tight">{week.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Patterns section ─────────────────────────────────────────────────────────
+
+function scoreColor(score: number): string {
+  if (score > 0.2) return "bg-green-500/70";
+  if (score < -0.2) return "bg-rose-500/70";
+  return "bg-primary/60";
+}
+
+function scoreTextColor(score: number): string {
+  if (score > 0.2) return "text-green-700 dark:text-green-400";
+  if (score < -0.2) return "text-rose-600 dark:text-rose-400";
+  return "text-primary";
+}
+
+function scoreLabel(score: number): string {
+  if (score >= 0.6) return "uplifting";
+  if (score >= 0.2) return "positive";
+  if (score > -0.2) return "neutral";
+  if (score > -0.6) return "heavy";
+  return "tough";
+}
+
+function PatternsSection({ patterns }: { patterns: JournalPatterns }) {
+  const { timeSlots, topTags } = patterns;
+  const hasTimeData = timeSlots.some((s) => s.count > 0);
+  const hasTagData = topTags.length > 0;
+
+  if (!hasTimeData && !hasTagData) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-8">
+        <p className="text-sm text-muted-foreground text-center">
+          Enable AI features and write more entries to discover your patterns.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Time of day */}
+      {hasTimeData && (
+        <div className="flex flex-col gap-2.5">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">When you journal</p>
+          <div className="grid grid-cols-2 gap-2">
+            {timeSlots.filter((s) => s.count > 0).map((slot) => {
+              const normalised = (slot.avgScore + 1) / 2; // 0…1
+              const widthPct = Math.max(8, Math.round(normalised * 100));
+              return (
+                <div key={slot.slot} className="rounded-xl border border-border bg-card px-3.5 py-2.5 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px]">{slot.emoji} {slot.label}</span>
+                    <span className={`text-[11px] font-medium ${scoreTextColor(slot.avgScore)}`}>
+                      {scoreLabel(slot.avgScore)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${scoreColor(slot.avgScore)}`}
+                      style={{ width: `${widthPct}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground/60">{slot.count} {slot.count === 1 ? "entry" : "entries"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Tag tone */}
+      {hasTagData && (
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Tags & emotional tone</p>
+          <div className="flex flex-col divide-y divide-border/50">
+            {topTags.map((tp) => {
+              const normalised = (tp.avgScore + 1) / 2;
+              const widthPct = Math.max(4, Math.round(normalised * 100));
+              return (
+                <div key={tp.tag} className="flex items-center gap-3 py-2.5">
+                  <span className="text-[12px] font-medium text-foreground/80 w-24 shrink-0 truncate">#{tp.tag}</span>
+                  <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${scoreColor(tp.avgScore)}`}
+                      style={{ width: `${widthPct}%` }}
+                    />
+                  </div>
+                  <span className={`text-[11px] font-medium w-14 text-right shrink-0 ${scoreTextColor(tp.avgScore)}`}>
+                    {scoreLabel(tp.avgScore)}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground/50 w-6 text-right shrink-0">{tp.count}×</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Section wrapper ──────────────────────────────────────────────────────────
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -210,11 +393,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export function InsightsView() {
   const [stats, setStats] = useState<JournalStats | null>(null);
+  const [sentiment, setSentiment] = useState<SentimentStats | null>(null);
+  const [patterns, setPatterns] = useState<JournalPatterns | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     getAllEntries().then((entries) => {
       setStats(computeStats(entries));
+      setSentiment(computeSentimentStats(entries));
+      setPatterns(computePatterns(entries));
       setIsLoading(false);
     });
   }, []);
@@ -268,6 +455,16 @@ export function InsightsView() {
               {/* Activity chart */}
               <Section title="30-day activity">
                 <ActivityChart data={stats.last30Days} />
+              </Section>
+
+              {/* Emotional tone */}
+              <Section title="Emotional tone (last 30 days)">
+                <SentimentSection sentiment={sentiment ?? { last30: { positive: 0, reflective: 0, challenging: 0, neutral: 0, total: 0 }, weeklyScores: [] }} />
+              </Section>
+
+              {/* Patterns */}
+              <Section title="Patterns">
+                <PatternsSection patterns={patterns ?? { timeSlots: [], topTags: [] }} />
               </Section>
 
               {/* Writing habits */}

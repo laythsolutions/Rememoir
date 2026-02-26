@@ -2,11 +2,11 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Mic, Video, Square, Trash2, FileText, CornerUpLeft, ImagePlus, X } from "lucide-react";
+import { Loader2, Mic, Video, Square, Trash2, FileText, CornerUpLeft, ImagePlus, X, Tag, Sparkles, LayoutTemplate } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TagInput } from "@/components/TagInput";
 import { RememoirPromptDisplay } from "@/components/RememoirPromptDisplay";
-import { addEntry } from "@/lib/db";
+import { addEntry, updateEntryAI } from "@/lib/db";
 import { getDailyPrompt } from "@/lib/prompts";
 import { useEntryStore } from "@/store/entryStore";
 import type { RememoirEntry, ImageRef } from "@/lib/types";
@@ -14,8 +14,53 @@ import { useRecording } from "@/hooks/useRecording";
 import { formatDuration } from "@/lib/utils";
 import { saveMediaFile } from "@/lib/opfs";
 import { compressImage } from "@/lib/imageUtils";
+import { analyzeEntry, generateSmartPrompt, isAIEnabled } from "@/lib/ai";
+import { getAllEntries } from "@/lib/db";
+import { toast } from "sonner";
+import { TemplateSheet } from "@/components/TemplateSheet";
+import { performAutoBackup } from "@/lib/autobackup";
 
-// ─── Transcript card ─────────────────────────────────────────────────────────
+// ─── Side toolbar button ──────────────────────────────────────────────────────
+
+function SideButton({
+  icon,
+  label,
+  onClick,
+  active = false,
+  badge = 0,
+  disabled = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  badge?: number;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150 active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+        active
+          ? "bg-primary text-primary-foreground shadow-sm"
+          : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground border border-border"
+      }`}
+    >
+      {icon}
+      {badge > 0 && (
+        <span className="absolute -top-1 -right-1 min-w-[1rem] h-4 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] font-bold px-0.5">
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ─── Transcript card ──────────────────────────────────────────────────────────
 
 function TranscriptCard({
   transcript,
@@ -64,13 +109,21 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
   const [tags, setTags] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPrompt, setShowPrompt] = useState(true);
+  const [showTagPanel, setShowTagPanel] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [draftRestored, setDraftRestored] = useState(false);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // AI features
+  const [aiEnabled] = useState(() => isAIEnabled());
+  const [isSuggestingTags, setIsSuggestingTags] = useState(false);
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+  const [isPersonalisingPrompt, setIsPersonalisingPrompt] = useState(false);
+  const [customPromptText, setCustomPromptText] = useState<string | null>(null);
 
   const { addEntryToFeed } = useEntryStore();
 
@@ -83,8 +136,7 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
         if (saved.text?.trim()) {
           setText(saved.text);
           setTags(saved.tags ?? []);
-          setDraftRestored(true);
-          setTimeout(() => setDraftRestored(false), 3000);
+          toast.info("Draft restored — pick up where you left off.");
         }
       }
     } catch {
@@ -114,9 +166,11 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
     saveDraft(text, tg);
   }, [text, saveDraft]);
 
-  // Use initialPrompt from URL if provided, otherwise fall back to daily prompt
+  // Use initialPrompt from URL if provided, custom AI prompt, or fall back to daily prompt
   const dailyPrompt = getDailyPrompt();
-  const prompt = initialPrompt
+  const prompt = customPromptText
+    ? { id: dailyPrompt.id, text: customPromptText, category: dailyPrompt.category }
+    : initialPrompt
     ? { id: dailyPrompt.id, text: initialPrompt, category: dailyPrompt.category }
     : dailyPrompt;
 
@@ -134,12 +188,12 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
 
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
 
-  // Auto-grow textarea
+  // Auto-grow textarea beyond its initial height
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.max(el.scrollHeight, 160)}px`;
+    el.style.height = `${el.scrollHeight}px`;
   }, [text]);
 
   const handleImageFiles = useCallback(async (files: FileList | null) => {
@@ -216,6 +270,17 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
       const id = await addEntry(entryData);
       addEntryToFeed({ ...entryData, id });
       localStorage.removeItem(DRAFT_KEY);
+
+      // Fire-and-forget auto-backup
+      getAllEntries().then((all) => performAutoBackup(all));
+
+      // Fire-and-forget AI analysis
+      if (aiEnabled && text.trim().split(/\s+/).length >= 10) {
+        analyzeEntry(text.trim(), tags).then((insight) => {
+          if (insight) updateEntryAI(id, insight).catch(() => {});
+        });
+      }
+
       router.push("/timeline");
     } catch (err) {
       setError("Failed to save entry. Please try again.");
@@ -225,182 +290,218 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
     }
   }, [text, tags, audioState.mediaRef, videoState.mediaRef, imageFiles, showPrompt, prompt.id, addEntryToFeed, router]);
 
+  const handleSuggestTags = useCallback(async () => {
+    setIsSuggestingTags(true);
+    try {
+      const insight = await analyzeEntry(text.trim(), tags);
+      const newTags = insight?.suggestedTags.filter((t) => !tags.includes(t)) ?? [];
+      if (newTags.length) {
+        setSuggestedTags(newTags);
+      } else {
+        toast.info("No new tag suggestions for this entry.");
+      }
+    } finally {
+      setIsSuggestingTags(false);
+    }
+  }, [text, tags]);
+
+  const handlePersonalisePrompt = useCallback(async () => {
+    setIsPersonalisingPrompt(true);
+    try {
+      const recent = await getAllEntries();
+      const entries = recent.slice(0, 5).map((e) => ({ text: e.text, createdAt: e.createdAt }));
+      if (entries.length < 1) return;
+      const p = await generateSmartPrompt(entries);
+      if (p) setCustomPromptText(p);
+    } finally {
+      setIsPersonalisingPrompt(false);
+    }
+  }, []);
+
   return (
     <div className="flex flex-col gap-5">
-      {/* Draft restored banner */}
-      {draftRestored && (
-        <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-primary/8 border border-primary/20 text-[13px] text-primary font-medium">
-          <span aria-hidden>✦</span> Draft restored — pick up where you left off.
-        </div>
+      {showTemplates && (
+        <TemplateSheet
+          onSelect={(content) => { setText(content); saveDraft(content, tags); }}
+          onClose={() => setShowTemplates(false)}
+        />
       )}
-
       {/* Daily prompt */}
       {showPrompt && (
-        <RememoirPromptDisplay
-          prompt={prompt}
-          onUse={(t) => { const val = text ? text + "\n\n" + t : t; setText(val); saveDraft(val, tags); }}
-          onDismiss={() => setShowPrompt(false)}
-        />
+        <div className="flex flex-col gap-1.5">
+          <RememoirPromptDisplay
+            prompt={prompt}
+            onUse={(t) => { const val = text ? text + "\n\n" + t : t; setText(val); saveDraft(val, tags); }}
+            onDismiss={() => setShowPrompt(false)}
+          />
+          {aiEnabled && (
+            <button
+              type="button"
+              onClick={handlePersonalisePrompt}
+              disabled={isPersonalisingPrompt}
+              className="self-start flex items-center gap-1.5 text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed px-0.5"
+            >
+              {isPersonalisingPrompt
+                ? <><Loader2 className="w-3 h-3 animate-spin" /> Personalising…</>
+                : <><Sparkles className="w-3 h-3" /> Personalise prompt</>}
+            </button>
+          )}
+        </div>
       )}
 
-      {/* Writing area */}
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="entry-text" className="sr-only">Journal entry</label>
-        <textarea
-          id="entry-text"
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => handleTextChange(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              e.preventDefault();
-              handleSubmit();
-            }
-          }}
-          placeholder="What's on your mind today…"
-          autoFocus
-          className="writing-area w-full min-h-[160px] px-5 py-4 rounded-2xl border border-border bg-card text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/40 resize-none transition-all duration-200 shadow-sm overflow-hidden"
-        />
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[11px] text-muted-foreground/40">
-            {!isSubmitting && "⌘↵ to save"}
-          </span>
-          <span className="text-[11px] text-muted-foreground/60 tabular-nums">
-            {wordCount === 0 ? "" :
-             wordCount >= 300 ? `${wordCount} words · great entry` :
-             wordCount >= 100 ? `${wordCount} words · keep going` :
-             `${wordCount} word${wordCount !== 1 ? "s" : ""}`}
-          </span>
-        </div>
-      </div>
-
-      {/* Tags */}
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest px-0.5">
-          Tags
-        </label>
-        <TagInput value={tags} onChange={handleTagsChange} />
-      </div>
-
-      {/* Media controls */}
-      <div className="flex flex-col gap-3">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest px-0.5">
-          Record
-        </p>
-        <div className="flex flex-wrap gap-2.5">
-          {/* Audio */}
-          {!audioState.mediaRef ? (
-            <Button
-              type="button"
-              variant={audioState.isRecording ? "destructive" : "outline"}
-              size="sm"
-              onClick={audioState.isRecording ? stopAudio : startAudio}
-              disabled={!audioState.isSupported || videoState.isRecording}
-              className="gap-2 h-9 rounded-xl cursor-pointer"
-            >
-              {audioState.isRecording ? (
-                <>
-                  <Square className="w-3.5 h-3.5" />
-                  Stop ({formatDuration(audioState.elapsed)})
-                </>
-              ) : (
-                <>
-                  <Mic className="w-3.5 h-3.5" />
-                  Audio
-                </>
-              )}
-            </Button>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-muted/40">
-              <audio src={audioState.blobUrl!} controls className="h-8 max-w-[180px]" />
-              <button
-                type="button"
-                onClick={clearAudio}
-                className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                aria-label="Remove audio"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
-          {/* Video */}
-          {!videoState.mediaRef ? (
-            <Button
-              type="button"
-              variant={videoState.isRecording ? "destructive" : "outline"}
-              size="sm"
-              onClick={videoState.isRecording ? stopVideo : startVideo}
-              disabled={!videoState.isSupported || audioState.isRecording}
-              className="gap-2 h-9 rounded-xl cursor-pointer"
-            >
-              {videoState.isRecording ? (
-                <>
-                  <Square className="w-3.5 h-3.5" />
-                  Stop ({formatDuration(videoState.elapsed)})
-                </>
-              ) : (
-                <>
-                  <Video className="w-3.5 h-3.5" />
-                  Video
-                </>
-              )}
-            </Button>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-muted/40">
-              <video src={videoState.blobUrl!} controls className="h-14 rounded-lg" />
-              <button
-                type="button"
-                onClick={clearVideo}
-                className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                aria-label="Remove video"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-          {/* Photos */}
-          <input
-            ref={imageInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => handleImageFiles(e.target.files)}
+      {/* Main writing row: large textarea + vertical side toolbar */}
+      <div className="flex gap-2 items-start">
+        {/* Textarea */}
+        <div className="flex-1 flex flex-col gap-1.5">
+          <label htmlFor="entry-text" className="sr-only">Journal entry</label>
+          <textarea
+            id="entry-text"
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => handleTextChange(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
+            placeholder="What's on your mind today…"
+            autoFocus
+            className="writing-area w-full min-h-[calc(100svh-320px)] px-5 py-4 rounded-2xl border border-border bg-card text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/40 resize-none transition-all duration-200 shadow-sm overflow-hidden"
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => imageInputRef.current?.click()}
-            disabled={audioState.isRecording || videoState.isRecording}
-            className="gap-2 h-9 rounded-xl cursor-pointer"
-          >
-            <ImagePlus className="w-3.5 h-3.5" />
-            Photo
-          </Button>
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[11px] text-muted-foreground/40">
+              {!isSubmitting && "⌘↵ to save"}
+            </span>
+            <span className="text-[11px] text-muted-foreground/60 tabular-nums">
+              {wordCount === 0 ? "" :
+               wordCount >= 300 ? `${wordCount} words · great entry` :
+               wordCount >= 100 ? `${wordCount} words · keep going` :
+               `${wordCount} word${wordCount !== 1 ? "s" : ""}`}
+            </span>
+          </div>
         </div>
 
-        {/* Image previews */}
-        {imagePreviewUrls.length > 0 && (
-          <div className="grid grid-cols-3 gap-2">
-            {imagePreviewUrls.map((url, i) => (
-              <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-border">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removeImage(i)}
-                  className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
-                  aria-label="Remove photo"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Vertical side toolbar */}
+        <div className="flex flex-col gap-1.5 shrink-0 pt-0.5">
+          <SideButton
+            icon={<LayoutTemplate className="w-4 h-4" />}
+            label="Templates"
+            onClick={() => setShowTemplates(true)}
+          />
+          <SideButton
+            icon={<Tag className="w-4 h-4" />}
+            label="Tags"
+            onClick={() => setShowTagPanel((p) => !p)}
+            active={showTagPanel}
+            badge={tags.length}
+          />
+          <SideButton
+            icon={audioState.isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            label={audioState.isRecording ? `Stop (${formatDuration(audioState.elapsed)})` : "Audio"}
+            onClick={audioState.isRecording ? stopAudio : startAudio}
+            active={audioState.isRecording || !!audioState.mediaRef}
+            disabled={!audioState.isSupported || videoState.isRecording}
+          />
+          <SideButton
+            icon={videoState.isRecording ? <Square className="w-4 h-4" /> : <Video className="w-4 h-4" />}
+            label={videoState.isRecording ? `Stop (${formatDuration(videoState.elapsed)})` : "Video"}
+            onClick={videoState.isRecording ? stopVideo : startVideo}
+            active={videoState.isRecording || !!videoState.mediaRef}
+            disabled={!videoState.isSupported || audioState.isRecording}
+          />
+          <SideButton
+            icon={<ImagePlus className="w-4 h-4" />}
+            label="Photo"
+            onClick={() => imageInputRef.current?.click()}
+            badge={imageFiles.length}
+            disabled={audioState.isRecording || videoState.isRecording}
+          />
+        </div>
       </div>
+
+      {/* Hidden file input */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => handleImageFiles(e.target.files)}
+      />
+
+      {/* Tag panel — slides in below when toggled */}
+      {showTagPanel && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between px-0.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+              Tags
+            </label>
+            {aiEnabled && wordCount >= 30 && (
+              <button
+                type="button"
+                onClick={handleSuggestTags}
+                disabled={isSuggestingTags}
+                className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isSuggestingTags
+                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Suggesting…</>
+                  : <><Sparkles className="w-3 h-3" /> Suggest</>}
+              </button>
+            )}
+          </div>
+          <TagInput value={tags} onChange={handleTagsChange} />
+          {suggestedTags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              <span className="text-[10px] text-muted-foreground/60 self-center">Add:</span>
+              {suggestedTags.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => {
+                    const next = [...tags, tag];
+                    handleTagsChange(next);
+                    setSuggestedTags((prev) => prev.filter((t) => t !== tag));
+                  }}
+                  className="text-[11px] px-2 py-0.5 rounded-full border border-primary/30 bg-primary/8 text-primary font-medium hover:bg-primary/15 transition-colors cursor-pointer"
+                >
+                  +{tag}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Audio player (after recording done) */}
+      {audioState.mediaRef && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-muted/40">
+          <audio src={audioState.blobUrl!} controls className="h-8 flex-1 min-w-0" />
+          <button
+            type="button"
+            onClick={clearAudio}
+            className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer shrink-0"
+            aria-label="Remove audio"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Video player (after recording done) */}
+      {videoState.mediaRef && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-muted/40">
+          <video src={videoState.blobUrl!} controls className="h-14 rounded-lg flex-1 min-w-0" />
+          <button
+            type="button"
+            onClick={clearVideo}
+            className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer shrink-0"
+            aria-label="Remove video"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Video preview — always in DOM to avoid display:none playback block */}
       <video
@@ -418,14 +519,34 @@ export function RememoirEntryForm({ initialPrompt }: { initialPrompt?: string })
 
       {/* Live transcripts */}
       {audioState.isRecording && audioState.transcript && (
-        <p className="text-xs text-muted-foreground/60 italic leading-relaxed line-clamp-2 -mt-2">
+        <p className="text-xs text-muted-foreground/60 italic leading-relaxed line-clamp-2">
           &ldquo;{audioState.transcript}&rdquo;
         </p>
       )}
       {videoState.isRecording && videoState.transcript && (
-        <p className="text-xs text-muted-foreground/60 italic leading-relaxed line-clamp-2 -mt-2">
+        <p className="text-xs text-muted-foreground/60 italic leading-relaxed line-clamp-2">
           &ldquo;{videoState.transcript}&rdquo;
         </p>
+      )}
+
+      {/* Image previews */}
+      {imagePreviewUrls.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {imagePreviewUrls.map((url, i) => (
+            <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-border">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={() => removeImage(i)}
+                className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
+                aria-label="Remove photo"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Transcript cards */}
